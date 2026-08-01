@@ -99,23 +99,36 @@ const App = (() => {
           </div>
         </div>
         <div class="card panel">
-          <div class="panel__title">Reset demo data</div>
-          <div class="text-soft" style="font-size:12px; margin-bottom: 10px;">Wipes all projects and tasks and reloads fresh sample data.</div>
-          <button class="btn-danger" id="resetDataBtn">Reset all data</button>
+          <div class="panel__title">Demo data</div>
+          <div class="text-soft" style="font-size:12px; margin-bottom: 10px;">Loads sample projects, tasks, portfolios and milestones so you can explore the app. Only runs when you click it.</div>
+          <button class="btn-secondary" id="loadDemoDataBtn">Load demo data</button>
+        </div>
+        <div class="card panel">
+          <div class="panel__title">Clear all data</div>
+          <div class="text-soft" style="font-size:12px; margin-bottom: 10px;">Permanently deletes all projects, tasks, portfolios and milestones from your database. This does not add anything back.</div>
+          <button class="btn-danger" id="clearDataBtn">Clear all data</button>
         </div>
       </div>
     `;
     document.getElementById('darkModeToggle').addEventListener('change', (e) => setDarkMode(e.target.checked));
     document.getElementById('exportBtn').addEventListener('click', exportCSV);
     document.getElementById('importFile').addEventListener('change', importCSV);
-    document.getElementById('resetDataBtn').addEventListener('click', () => {
-      if (!confirm('This will delete all current projects, tasks, portfolios, and milestones. Continue?')) return;
+    document.getElementById('loadDemoDataBtn').addEventListener('click', () => {
+      if (!confirm('This will ADD sample projects, tasks, portfolios and milestones alongside any data you already have. Continue?')) return;
       const { projects, tasks, portfolios, milestones } = SampleData.generate();
-      DataStore.setProjects(projects);
-      DataStore.setTasks(tasks);
-      DataStore.setPortfolios(portfolios);
-      DataStore.setMilestones(milestones);
-      Utils.toast('Demo data reset');
+      DataStore.setProjects([...DataStore.getProjects(), ...projects]);
+      DataStore.setTasks([...DataStore.getTasks(), ...tasks]);
+      DataStore.setPortfolios([...DataStore.getPortfolios(), ...portfolios]);
+      DataStore.setMilestones([...DataStore.getMilestones(), ...milestones]);
+      Utils.toast('Demo data loaded');
+    });
+    document.getElementById('clearDataBtn').addEventListener('click', () => {
+      if (!confirm('This will permanently delete ALL current projects, tasks, portfolios, and milestones. This cannot be undone. Continue?')) return;
+      DataStore.setProjects([]);
+      DataStore.setTasks([]);
+      DataStore.setPortfolios([]);
+      DataStore.setMilestones([]);
+      Utils.toast('All data cleared');
     });
   }
 
@@ -358,13 +371,10 @@ const App = (() => {
 
   async function init() {
     await DataStore.ready;
-    if (!DataStore.getProjects().length && !DataStore.getTasks().length) {
-      const { projects, tasks, portfolios, milestones } = SampleData.generate();
-      await DataStore.setProjects(projects);
-      await DataStore.setTasks(tasks);
-      await DataStore.setPortfolios(portfolios);
-      await DataStore.setMilestones(milestones);
-    }
+    // NOTE: sample/demo data is no longer auto-seeded here. An empty
+    // Firestore/LocalStorage store now stays empty — real data only gets
+    // saved when the user actually creates it. Demo data can still be
+    // loaded on purpose from Settings > "Load demo data".
     if (!DataStore.getMembers().length) {
       await seedMembersFromExistingData();
     }
