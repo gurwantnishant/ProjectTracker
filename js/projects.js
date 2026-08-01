@@ -191,7 +191,7 @@ const Projects = (() => {
     if (!project) return;
     if (act === 'edit') openEditModal(project);
     if (act === 'duplicate') {
-      const copy = { ...project, id: Utils.uid('proj'), name: project.name + ' (Copy)', createdAt: Date.now() };
+      const copy = { ...project, id: Utils.uid('proj'), name: project.name + ' (Copy)', progress: 0, createdAt: Date.now() };
       DataStore.setProjects([...projects, copy]);
       Utils.toast(`Duplicated "${project.name}"`);
     }
@@ -217,7 +217,6 @@ const Projects = (() => {
         <div class="form-field"><label>Due Date</label><input type="date" id="f_due" value="${p.dueDate || Utils.todayISO()}"></div>
         <div class="form-field"><label>Priority</label><select id="f_priority">${PRIORITIES.map(x => `<option ${p.priority === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
         <div class="form-field"><label>Status</label><select id="f_status">${STATUSES.map(x => `<option ${p.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-        <div class="form-field"><label>Progress (%)</label><input type="number" id="f_progress" min="0" max="100" value="${p.progress ?? 0}"></div>
         <div class="form-field"><label>Portfolio</label><select id="f_portfolio"><option value="">No portfolio</option>${portfolios.map(pf => `<option value="${pf.id}" ${p.portfolioId === pf.id ? 'selected' : ''}>${Utils.escapeHtml(pf.name)}</option>`).join('')}</select></div>
         <div class="form-field"><label>Tags (comma separated)</label><input type="text" id="f_tags" value="${Utils.escapeHtml((p.tags || []).join(', '))}"></div>
         <div class="form-field"><label>Budget ($, optional)</label><input type="number" id="f_budget" min="0" step="1000" value="${p.budget ?? ''}" placeholder="e.g. 150000"></div>
@@ -239,7 +238,6 @@ const Projects = (() => {
       dueDate: root.querySelector('#f_due').value,
       priority: root.querySelector('#f_priority').value,
       status: root.querySelector('#f_status').value,
-      progress: Utils.clamp(parseInt(root.querySelector('#f_progress').value) || 0, 0, 100),
       portfolioId: root.querySelector('#f_portfolio').value || null,
       tags: root.querySelector('#f_tags').value.split(',').map(t => t.trim()).filter(Boolean),
       budget: budgetRaw ? Math.max(0, parseFloat(budgetRaw)) : null,
@@ -260,7 +258,7 @@ const Projects = (() => {
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveProjectBtn').addEventListener('click', () => {
           const data = readForm(root);
-          const project = { id: Utils.uid('proj'), ...data, color: getColor(), archived: false, createdAt: Date.now() };
+          const project = { id: Utils.uid('proj'), ...data, progress: 0, color: getColor(), archived: false, createdAt: Date.now() };
           DataStore.setProjects([...DataStore.getProjects(), project]);
           Utils.toast(`Created "${project.name}"`);
           close();

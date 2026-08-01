@@ -134,9 +134,37 @@ const DataStore = (() => {
       notify('projects');
     },
     async setTasks(items) {
+      // Capture which projects were touched by the OLD task list too, so a
+      // deleted task's project still gets its progress recalculated (the
+      // deleted task's projectId won't appear in the new `items` list).
+      const touchedProjectIds = new Set([
+        ...cache.tasks.map(t => t.projectId),
+        ...items.map(t => t.projectId)
+      ]);
+
       cache.tasks = items;
       await persist('tasks');
       notify('tasks');
+
+      // Auto-recalculate each affected project's completion % from its tasks:
+      // progress = (completed tasks / total tasks) * 100, rounded. Projects
+      // with no tasks show 0%. This keeps Project Progress always in sync
+      // with task status, with no manual entry needed.
+      let projectsChanged = false;
+      const updatedProjects = cache.projects.map(p => {
+        if (!touchedProjectIds.has(p.id)) return p;
+        const projectTasks = cache.tasks.filter(t => t.projectId === p.id);
+        const newProgress = projectTasks.length
+          ? Math.round((projectTasks.filter(t => t.status === 'Completed').length / projectTasks.length) * 100)
+          : 0;
+        if (newProgress !== p.progress) projectsChanged = true;
+        return { ...p, progress: newProgress };
+      });
+      if (projectsChanged) {
+        cache.projects = updatedProjects;
+        await persist('projects');
+        notify('projects');
+      }
     },
     async setPortfolios(items) {
       cache.portfolios = items;
