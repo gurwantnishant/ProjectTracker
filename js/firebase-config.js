@@ -15,10 +15,10 @@
    ============================================================ */
 
 window.FLOWSPACE_FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyClTllzMe7Ot8XBUULu3no6ujKRZlzoLRQ",
+  authDomain: "attendance-tracker-644de.firebaseapp.com",
+  projectId: "attendance-tracker-644de",
+  storageBucket: "attendance-tracker-644de.firebasestorage.app",
+  messagingSenderId: "87090760206",
+  appId: "1:870907602061:web:2a3463edcecbf39fa2eec4"
 };
