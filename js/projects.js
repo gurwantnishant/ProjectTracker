@@ -300,7 +300,7 @@ const Projects = (() => {
       bodyHtml: `
         <div class="tab-bar">
           <button class="tab-btn is-active" data-tab="overview">Overview</button>
-          <button class="tab-btn" data-tab="charter">Charter${project.charter && project.charter.trim() ? ' 📜' : ''}</button>
+          <button class="tab-btn" data-tab="charter">Charter${hasCharterContent(getCharterData(project)) ? ' 📜' : ''}</button>
         </div>
         <div data-tab-panel="overview">
           <div class="flex gap-8" style="margin-bottom: 14px; flex-wrap:wrap;">
@@ -354,52 +354,253 @@ const Projects = (() => {
     });
   }
 
-  // ---------------- charter tab ----------------
-  const CHARTER_PLACEHOLDER = [
-    'Objective:', '', 'Success Criteria:', '', 'Scope (in / out):', '', 'Sponsor:', '', 'Key Risks:', ''
-  ].join('\n');
+  // ---------------- charter tab (structured template) ----------------
+  // Field-level placeholders / hints shown in the editor
+  const CHARTER_FIELD_HINTS = {
+    businessCase: 'Why does this project exist? Use "- " for bullets.\n- Current state / pain points\n- What this project changes',
+    projectScope: 'Business Units: ...\nCost/Work Type: ...\n\nUse "## " for a sub-heading, "- " for bullets.',
+    problemStatement: '- Problem 1\n- Problem 2',
+    goalStatement: '- Goal 1\n- Goal 2',
+    estimatedBenefits: '## Operational Benefits\n- ...\n\n## Financial Benefits\n- ...\n\n## Strategic Benefits\n- ...',
+    keySuccessMetrics: '- Metric 1\n- Metric 2'
+  };
+
+  // Normalize project.charter into the structured shape, migrating legacy free-text charters.
+  function getCharterData(project) {
+    const c = project.charter;
+    if (c && typeof c === 'object') {
+      return {
+        businessCase: c.businessCase || '',
+        projectScope: c.projectScope || '',
+        problemStatement: c.problemStatement || '',
+        goalStatement: c.goalStatement || '',
+        estimatedBenefits: c.estimatedBenefits || '',
+        keySuccessMetrics: c.keySuccessMetrics || '',
+        resourcePlan: { projectManager: (c.resourcePlan && c.resourcePlan.projectManager) || '', projectChampion: (c.resourcePlan && c.resourcePlan.projectChampion) || '' },
+        teamMembers: { dataTeam: (c.teamMembers && c.teamMembers.dataTeam) || '', businessSide: (c.teamMembers && c.teamMembers.businessSide) || '' },
+        milestones: Array.isArray(c.milestones) ? c.milestones.map(m => ({ name: m.name || '', dueDate: m.dueDate || '' })) : []
+      };
+    }
+    // legacy: plain string charter — migrate into Business Case so nothing is lost
+    if (typeof c === 'string' && c.trim()) {
+      return {
+        businessCase: c, projectScope: '', problemStatement: '', goalStatement: '', estimatedBenefits: '', keySuccessMetrics: '',
+        resourcePlan: { projectManager: '', projectChampion: '' },
+        teamMembers: { dataTeam: '', businessSide: '' },
+        milestones: []
+      };
+    }
+    return {
+      businessCase: '', projectScope: '', problemStatement: '', goalStatement: '', estimatedBenefits: '', keySuccessMetrics: '',
+      resourcePlan: { projectManager: '', projectChampion: '' },
+      teamMembers: { dataTeam: '', businessSide: '' },
+      milestones: []
+    };
+  }
+
+  function hasCharterContent(cd) {
+    return !!(cd.businessCase.trim() || cd.projectScope.trim() || cd.problemStatement.trim() || cd.goalStatement.trim() ||
+      cd.estimatedBenefits.trim() || cd.keySuccessMetrics.trim() ||
+      cd.resourcePlan.projectManager.trim() || cd.resourcePlan.projectChampion.trim() ||
+      cd.teamMembers.dataTeam.trim() || cd.teamMembers.businessSide.trim() ||
+      cd.milestones.some(m => m.name.trim() || m.dueDate));
+  }
+
+  // Lightweight markup -> HTML: blank lines separate blocks, "## " = sub-heading,
+  // "- " / "• " = bullet list item, "**bold**" = <strong>. Everything is HTML-escaped first.
+  function renderCharterText(text) {
+    const raw = (text || '').trim();
+    if (!raw) return '<div class="charter-empty-hint">Not filled in yet.</div>';
+    const applyBold = (s) => s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    const lines = Utils.escapeHtml(raw).split('\n');
+    let html = '';
+    let inList = false;
+    const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) { closeList(); return; }
+      if (trimmed.startsWith('## ')) {
+        closeList();
+        html += `<div class="charter-subhead">${applyBold(trimmed.slice(3))}</div>`;
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+        if (!inList) { html += '<ul>'; inList = true; }
+        html += `<li>${applyBold(trimmed.slice(2))}</li>`;
+      } else {
+        closeList();
+        html += `<div class="charter-line">${applyBold(trimmed)}</div>`;
+      }
+    });
+    closeList();
+    return html;
+  }
+
+  function renderMilestonesView(milestones) {
+    const rows = milestones.filter(m => m.name.trim() || m.dueDate);
+    if (!rows.length) return '<div class="charter-empty-hint">No milestones yet.</div>';
+    return `<table class="charter-milestones"><tbody>${rows.map(m =>
+      `<tr><td>${Utils.escapeHtml(m.name || '—')}</td><td>${m.dueDate ? Utils.fmtDate(m.dueDate) : '—'}</td></tr>`
+    ).join('')}</tbody></table>`;
+  }
+
+  function charterCell(title, bodyHtml) {
+    return `<div class="charter-cell"><div class="charter-cell__head">${Utils.escapeHtml(title)}</div><div class="charter-cell__body">${bodyHtml}</div></div>`;
+  }
 
   function renderCharterTab(host, project) {
     if (!host) return;
-    const hasCharter = !!(project.charter && project.charter.trim());
-    host.innerHTML = hasCharter ? `
+    const cd = getCharterData(project);
+    if (!hasCharterContent(cd)) {
+      host.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state__icon">📜</div>
+          <div>No charter yet for this project.</div>
+          <div class="text-faint" style="font-size:12px; margin: 6px 0 14px;">Capture the business case, scope, resource plan, goals, benefits, and key milestones.</div>
+          <button class="btn-primary btn-sm" id="editCharterBtn">+ Add Charter</button>
+        </div>
+      `;
+      host.querySelector('#editCharterBtn').addEventListener('click', () => renderCharterEditor(host, project));
+      return;
+    }
+    const resourcePlanHtml = `<table class="charter-kv"><tbody>
+      <tr><td>Project Manager</td><td>${cd.resourcePlan.projectManager ? Utils.escapeHtml(cd.resourcePlan.projectManager) : '<span class="charter-empty-hint">—</span>'}</td></tr>
+      <tr><td>Project Champion</td><td>${cd.resourcePlan.projectChampion ? Utils.escapeHtml(cd.resourcePlan.projectChampion) : '<span class="charter-empty-hint">—</span>'}</td></tr>
+    </tbody></table>`;
+    const teamMembersHtml = `
+      ${cd.teamMembers.dataTeam.trim() ? `<div class="charter-subhead" style="margin-top:0;">Data Team</div>${renderCharterText(cd.teamMembers.dataTeam)}` : ''}
+      ${cd.teamMembers.businessSide.trim() ? `<div class="charter-subhead">Business Side</div>${renderCharterText(cd.teamMembers.businessSide)}` : ''}
+      ${!cd.teamMembers.dataTeam.trim() && !cd.teamMembers.businessSide.trim() ? '<div class="charter-empty-hint">Not filled in yet.</div>' : ''}
+    `;
+    host.innerHTML = `
       <div class="flex" style="justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
         <div class="panel__title mb-0">Project Charter</div>
         <button class="btn-secondary btn-sm" id="editCharterBtn">✏ Edit</button>
       </div>
-      <div class="charter-body">${Utils.escapeHtml(project.charter)}</div>
-    ` : `
-      <div class="empty-state">
-        <div class="empty-state__icon">📜</div>
-        <div>No charter yet for this project.</div>
-        <div class="text-faint" style="font-size:12px; margin: 6px 0 14px;">Capture why this project exists — objective, success criteria, scope, sponsor, key risks.</div>
-        <button class="btn-primary btn-sm" id="editCharterBtn">+ Add Charter</button>
+      <div class="charter-grid">
+        ${charterCell('Business Case', renderCharterText(cd.businessCase))}
+        ${charterCell('Project Scope', renderCharterText(cd.projectScope))}
+        ${charterCell('Resource Plan', resourcePlanHtml)}
+        ${charterCell('Problem Statement', renderCharterText(cd.problemStatement))}
+        ${charterCell('Goal Statement', renderCharterText(cd.goalStatement))}
+        ${charterCell('Team Members', teamMembersHtml)}
+        ${charterCell('Estimated Benefits', renderCharterText(cd.estimatedBenefits))}
+        ${charterCell('Key Success Metrics', renderCharterText(cd.keySuccessMetrics))}
+        ${charterCell('Key Milestones', renderMilestonesView(cd.milestones))}
       </div>
     `;
     host.querySelector('#editCharterBtn').addEventListener('click', () => renderCharterEditor(host, project));
   }
 
+  function milestoneRowHtml(m, i) {
+    return `
+      <div class="charter-milestone-row" data-row="${i}">
+        <input type="text" class="ms-name" placeholder="Milestone (e.g. Planning)" value="${Utils.escapeHtml(m.name || '')}">
+        <input type="date" class="ms-date" value="${m.dueDate || ''}">
+        <button type="button" class="icon-btn ms-remove" title="Remove milestone">✕</button>
+      </div>
+    `;
+  }
+
   function renderCharterEditor(host, project) {
+    const cd = getCharterData(project);
+    const milestones = cd.milestones.length ? cd.milestones : [{ name: '', dueDate: '' }];
+
     host.innerHTML = `
       <div class="panel__title" style="margin-bottom:4px;">Project Charter</div>
-      <div class="text-faint" style="font-size:11.5px; margin-bottom:8px;">Free-form — write it however works for your team. No fixed structure required.</div>
-      <textarea id="charterText" class="charter-textarea" placeholder="${Utils.escapeHtml(CHARTER_PLACEHOLDER)}">${Utils.escapeHtml(project.charter || '')}</textarea>
-      <div class="flex gap-8" style="justify-content:flex-end; margin-top:12px;">
+      <div class="charter-hint">Use "## " for a sub-heading and "- " for a bullet point within any text box. "**text**" makes text bold.</div>
+      <div class="charter-editor-grid">
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Business Case</div>
+          <textarea id="cf-businessCase" placeholder="${Utils.escapeHtml(CHARTER_FIELD_HINTS.businessCase)}">${Utils.escapeHtml(cd.businessCase)}</textarea>
+        </div>
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Project Scope</div>
+          <textarea id="cf-projectScope" placeholder="${Utils.escapeHtml(CHARTER_FIELD_HINTS.projectScope)}">${Utils.escapeHtml(cd.projectScope)}</textarea>
+        </div>
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Resource Plan</div>
+          <div class="charter-editor-kv-row"><label>Project Manager</label><input type="text" id="cf-rpManager" value="${Utils.escapeHtml(cd.resourcePlan.projectManager)}"></div>
+          <div class="charter-editor-kv-row"><label>Project Champion</label><input type="text" id="cf-rpChampion" value="${Utils.escapeHtml(cd.resourcePlan.projectChampion)}"></div>
+        </div>
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Problem Statement</div>
+          <textarea id="cf-problemStatement" placeholder="${Utils.escapeHtml(CHARTER_FIELD_HINTS.problemStatement)}">${Utils.escapeHtml(cd.problemStatement)}</textarea>
+        </div>
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Goal Statement</div>
+          <textarea id="cf-goalStatement" placeholder="${Utils.escapeHtml(CHARTER_FIELD_HINTS.goalStatement)}">${Utils.escapeHtml(cd.goalStatement)}</textarea>
+        </div>
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Team Members</div>
+          <div style="font-size:11px; color:var(--ink-faint); margin-bottom:3px;">Data Team (one per line)</div>
+          <textarea id="cf-tmData" style="min-height:56px;" placeholder="- Name 1\n- Name 2">${Utils.escapeHtml(cd.teamMembers.dataTeam)}</textarea>
+          <div style="font-size:11px; color:var(--ink-faint); margin:6px 0 3px;">Business Side (one per line)</div>
+          <textarea id="cf-tmBusiness" style="min-height:56px;" placeholder="- Name 1\n- Name 2">${Utils.escapeHtml(cd.teamMembers.businessSide)}</textarea>
+        </div>
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Estimated Benefits</div>
+          <textarea id="cf-estimatedBenefits" style="min-height:130px;" placeholder="${Utils.escapeHtml(CHARTER_FIELD_HINTS.estimatedBenefits)}">${Utils.escapeHtml(cd.estimatedBenefits)}</textarea>
+        </div>
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Key Success Metrics</div>
+          <textarea id="cf-keySuccessMetrics" placeholder="${Utils.escapeHtml(CHARTER_FIELD_HINTS.keySuccessMetrics)}">${Utils.escapeHtml(cd.keySuccessMetrics)}</textarea>
+        </div>
+        <div class="charter-editor-cell">
+          <div class="charter-editor-cell__label">Key Milestones</div>
+          <div id="cf-milestoneRows">${milestones.map((m, i) => milestoneRowHtml(m, i)).join('')}</div>
+          <button type="button" class="btn-secondary btn-sm" id="cf-addMilestone" style="margin-top:2px;">+ Add milestone</button>
+        </div>
+      </div>
+      <div class="flex gap-8" style="justify-content:flex-end; margin-top:14px;">
         <button class="btn-secondary btn-sm" id="cancelCharterBtn">Cancel</button>
         <button class="btn-primary btn-sm" id="saveCharterBtn">Save Charter</button>
       </div>
     `;
+
+    const rowsHost = host.querySelector('#cf-milestoneRows');
+    const bindRemove = () => {
+      rowsHost.querySelectorAll('.ms-remove').forEach(btn => {
+        btn.onclick = () => {
+          if (rowsHost.querySelectorAll('.charter-milestone-row').length <= 1) {
+            btn.closest('.charter-milestone-row').querySelector('.ms-name').value = '';
+            btn.closest('.charter-milestone-row').querySelector('.ms-date').value = '';
+            return;
+          }
+          btn.closest('.charter-milestone-row').remove();
+        };
+      });
+    };
+    bindRemove();
+    host.querySelector('#cf-addMilestone').addEventListener('click', () => {
+      const div = document.createElement('div');
+      div.innerHTML = milestoneRowHtml({ name: '', dueDate: '' }, rowsHost.children.length);
+      rowsHost.appendChild(div.firstElementChild);
+      bindRemove();
+    });
+
     host.querySelector('#cancelCharterBtn').addEventListener('click', () => renderCharterTab(host, project));
     host.querySelector('#saveCharterBtn').addEventListener('click', () => {
-      const text = host.querySelector('#charterText').value.trim();
+      const val = (id) => host.querySelector(id).value.trim();
+      const newCharter = {
+        businessCase: val('#cf-businessCase'),
+        projectScope: val('#cf-projectScope'),
+        problemStatement: val('#cf-problemStatement'),
+        goalStatement: val('#cf-goalStatement'),
+        estimatedBenefits: val('#cf-estimatedBenefits'),
+        keySuccessMetrics: val('#cf-keySuccessMetrics'),
+        resourcePlan: { projectManager: val('#cf-rpManager'), projectChampion: val('#cf-rpChampion') },
+        teamMembers: { dataTeam: val('#cf-tmData'), businessSide: val('#cf-tmBusiness') },
+        milestones: Array.from(rowsHost.querySelectorAll('.charter-milestone-row'))
+          .map(row => ({ name: row.querySelector('.ms-name').value.trim(), dueDate: row.querySelector('.ms-date').value }))
+          .filter(m => m.name || m.dueDate)
+      };
       const all = DataStore.getProjects();
       const idx = all.findIndex(p => p.id === project.id);
       if (idx === -1) return;
-      all[idx] = { ...all[idx], charter: text };
+      all[idx] = { ...all[idx], charter: newCharter };
       DataStore.setProjects([...all]);
-      project.charter = text;
+      project.charter = newCharter;
       const tabBtn = document.querySelector('.tab-btn[data-tab="charter"]');
-      if (tabBtn) tabBtn.textContent = `Charter${text ? ' 📜' : ''}`;
+      if (tabBtn) tabBtn.textContent = `Charter${hasCharterContent(getCharterData(project)) ? ' 📜' : ''}`;
       Utils.toast('Charter saved');
       renderCharterTab(host, project);
     });
