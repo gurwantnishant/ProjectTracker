@@ -249,6 +249,44 @@ const Tasks = (() => {
   }
 
   // ---------------- forms ----------------
+  function projectById(id) { return DataStore.getProjects().find(p => p.id === id); }
+  function dateWindowLabel(project) { return `${Utils.fmtDate(project.startDate)} – ${Utils.fmtDate(project.dueDate)}`; }
+
+  function applyDateBounds(root, project) {
+    const startInput = root.querySelector('#f_start');
+    const dueInput = root.querySelector('#f_due');
+    const hint = root.querySelector('#f_dateHint');
+    [startInput, dueInput].forEach(el => el.classList.remove('is-invalid'));
+    if (project && project.startDate && project.dueDate) {
+      startInput.min = project.startDate; startInput.max = project.dueDate;
+      dueInput.min = project.startDate; dueInput.max = project.dueDate;
+      if (hint) { hint.textContent = `Must fall within the project window: ${dateWindowLabel(project)}`; hint.classList.remove('form-field__hint--error'); }
+    } else {
+      startInput.removeAttribute('min'); startInput.removeAttribute('max');
+      dueInput.removeAttribute('min'); dueInput.removeAttribute('max');
+      if (hint) hint.textContent = '';
+    }
+  }
+
+  // Returns null if valid, or { message, fields } describing which inputs are out of range
+  function validateTaskDates(data, project) {
+    if (!project || !project.startDate || !project.dueDate) return null;
+    const outStart = data.startDate && (data.startDate < project.startDate || data.startDate > project.dueDate);
+    const outDue = data.dueDate && (data.dueDate < project.startDate || data.dueDate > project.dueDate);
+    if (!outStart && !outDue) return null;
+    return {
+      message: `Task dates must fall within "${project.name}"'s project window (${dateWindowLabel(project)}).`,
+      fields: [...(outStart ? ['#f_start'] : []), ...(outDue ? ['#f_due'] : [])]
+    };
+  }
+
+  function showDateError(root, err) {
+    Utils.toast(err.message, { tone: 'danger' });
+    const hint = root.querySelector('#f_dateHint');
+    if (hint) { hint.textContent = err.message; hint.classList.add('form-field__hint--error'); }
+    err.fields.forEach(sel => root.querySelector(sel).classList.add('is-invalid'));
+  }
+
   function formHtml(t, projects) {
     const availableDeps = DataStore.getTasks().filter(x => x.id !== t.id && x.projectId === (t.projectId || projects[0]?.id));
     return `
@@ -259,6 +297,7 @@ const Tasks = (() => {
         <div class="form-field"><label>Assigned To</label><select id="f_assignee">${Utils.memberOptionsHtml(t.assignedTo || '')}</select></div>
         <div class="form-field"><label>Start Date</label><input type="date" id="f_start" value="${t.startDate || Utils.todayISO()}"></div>
         <div class="form-field"><label>Due Date</label><input type="date" id="f_due" value="${t.dueDate || Utils.todayISO()}"></div>
+        <div class="form-field span-2"><div class="form-field__hint" id="f_dateHint"></div></div>
         <div class="form-field"><label>Priority</label><select id="f_priority">${PRIORITIES.map(x => `<option ${t.priority === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
         <div class="form-field"><label>Status</label><select id="f_status">${STATUSES.map(x => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
         <div class="form-field"><label>Progress (%)</label><input type="number" id="f_progress" min="0" max="100" value="${t.progress ?? 0}"></div>
@@ -302,9 +341,13 @@ const Tasks = (() => {
       bodyHtml: formHtml(draft, projects),
       footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveTaskBtn">Create Task</button>`,
       onMount: (root, close) => {
+        applyDateBounds(root, projectById(root.querySelector('#f_project').value));
+        root.querySelector('#f_project').addEventListener('change', (e) => applyDateBounds(root, projectById(e.target.value)));
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveTaskBtn').addEventListener('click', () => {
           const data = readForm(root);
+          const err = validateTaskDates(data, projectById(data.projectId));
+          if (err) { showDateError(root, err); return; }
           const task = { id: Utils.uid('task'), ...data, comments: [], createdAt: Date.now() };
           DataStore.setTasks([...DataStore.getTasks(), task]);
           Utils.toast(`Created "${task.name}"`);
@@ -321,9 +364,13 @@ const Tasks = (() => {
       bodyHtml: formHtml(task, projects),
       footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveTaskBtn">Save Changes</button>`,
       onMount: (root, close) => {
+        applyDateBounds(root, projectById(root.querySelector('#f_project').value));
+        root.querySelector('#f_project').addEventListener('change', (e) => applyDateBounds(root, projectById(e.target.value)));
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveTaskBtn').addEventListener('click', () => {
           const data = readForm(root);
+          const err = validateTaskDates(data, projectById(data.projectId));
+          if (err) { showDateError(root, err); return; }
           const tasks = DataStore.getTasks();
           const idx = tasks.findIndex(t => t.id === task.id);
           tasks[idx] = { ...task, ...data };

@@ -168,6 +168,23 @@ const Gantt = (() => {
     return `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--ink-faint)"/></marker></defs>${svg}`;
   }
 
+  function projectOf(t) { return DataStore.getProjects().find(p => p.id === t.projectId); }
+
+  // Keeps a start/due pair within a project's start/due window, preserving duration where possible.
+  function clampToProject(newStart, newDue, project) {
+    if (!project || !project.startDate || !project.dueDate) return { start: newStart, due: newDue, clamped: false };
+    const dur = Math.max(1, Utils.daysBetween(newStart, newDue));
+    let start = newStart, due = newDue, clamped = false;
+    if (start < project.startDate) { start = project.startDate; due = Utils.addDays(start, dur); clamped = true; }
+    if (due > project.dueDate) {
+      due = project.dueDate;
+      start = Utils.addDays(due, -dur);
+      if (start < project.startDate) start = project.startDate;
+      clamped = true;
+    }
+    return { start, due, clamped };
+  }
+
   function shiftDependents(taskId, deltaDays, tasksMap, visited) {
     if (visited.has(taskId)) return;
     visited.add(taskId);
@@ -177,8 +194,11 @@ const Gantt = (() => {
           const pred = tasksMap[taskId];
           if (pred.dueDate > t.startDate) {
             const dur = Utils.daysBetween(t.startDate, t.dueDate);
-            t.startDate = pred.dueDate;
-            t.dueDate = Utils.addDays(t.startDate, dur);
+            const proposedStart = pred.dueDate;
+            const proposedDue = Utils.addDays(proposedStart, dur);
+            const { start, due } = clampToProject(proposedStart, proposedDue, projectOf(t));
+            t.startDate = start;
+            t.dueDate = due;
             shiftDependents(t.id, 0, tasksMap, visited);
           }
         }
@@ -221,14 +241,16 @@ const Gantt = (() => {
         const newWidth = parseFloat(bar.style.width);
         const newStartOffset = Math.round(newLeft / day);
         const newDur = Math.max(1, Math.round(newWidth / day));
-        const newStart = Utils.addDays(range.start, newStartOffset);
-        const newDue = Utils.addDays(newStart, newDur);
+        let newStart = Utils.addDays(range.start, newStartOffset);
+        let newDue = Utils.addDays(newStart, newDur);
 
         const tasksArr = DataStore.getTasks();
         const tasksMap = {};
         tasksArr.forEach(t => tasksMap[t.id] = { ...t });
         const t = tasksMap[bar.dataset.id];
-        t.startDate = newStart; t.dueDate = newDue;
+        const { start, due, clamped } = clampToProject(newStart, newDue, projectOf(t));
+        t.startDate = start; t.dueDate = due;
+        if (clamped) Utils.toast(`Kept "${t.name}" within its project's start/due dates`, { tone: 'danger' });
         shiftDependents(t.id, 0, tasksMap, new Set());
         DataStore.setTasks(Object.values(tasksMap));
         mode = null;

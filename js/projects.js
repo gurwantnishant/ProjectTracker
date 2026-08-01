@@ -278,6 +278,19 @@ const Projects = (() => {
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveProjectBtn').addEventListener('click', () => {
           const data = readForm(root);
+          if (data.startDate && data.dueDate) {
+            const projTasks = DataStore.getTasks().filter(t => t.projectId === project.id);
+            const outOfRange = projTasks.filter(t =>
+              (t.startDate && (t.startDate < data.startDate || t.startDate > data.dueDate)) ||
+              (t.dueDate && (t.dueDate < data.startDate || t.dueDate > data.dueDate))
+            );
+            if (outOfRange.length) {
+              const names = outOfRange.slice(0, 6).map(t => `• ${t.name} (${Utils.fmtDate(t.startDate)} – ${Utils.fmtDate(t.dueDate)})`).join('\n');
+              const more = outOfRange.length > 6 ? `\n…and ${outOfRange.length - 6} more` : '';
+              const ok = confirm(`${outOfRange.length} task(s) fall outside the new project window (${Utils.fmtDate(data.startDate)} – ${Utils.fmtDate(data.dueDate)}):\n\n${names}${more}\n\nSave anyway? You'll need to update those task dates separately.`);
+              if (!ok) return;
+            }
+          }
           const projects = DataStore.getProjects();
           const idx = projects.findIndex(p => p.id === project.id);
           projects[idx] = { ...project, ...data, color: getColor() };
