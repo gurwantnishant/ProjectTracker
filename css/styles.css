@@ -299,6 +299,83 @@ button { font-family: inherit; }
 .charter-body { font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; }
 .charter-textarea { width: 100%; min-height: 220px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); color: var(--ink); font-size: 13px; font-family: inherit; resize: vertical; line-height: 1.6; }
 
+/* ---- Charter: structured grid (mirrors Project Charter slide template) ---- */
+.charter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.charter-cell {
+  border: 1px solid var(--charter-navy, #2C3A55);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+.charter-cell__head {
+  background: var(--charter-navy, #2C3A55);
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 8px 12px;
+}
+.charter-cell__body {
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  flex: 1;
+}
+.charter-cell__body ul { margin: 0 0 6px; padding-left: 16px; }
+.charter-cell__body ul:last-child { margin-bottom: 0; }
+.charter-cell__body li { margin-bottom: 3px; }
+.charter-subhead { font-weight: 700; margin: 8px 0 3px; color: var(--ink); }
+.charter-subhead:first-child { margin-top: 0; }
+.charter-line { margin: 0 0 4px; }
+.charter-line:last-child { margin-bottom: 0; }
+.charter-empty-hint { color: var(--ink-faint); font-style: italic; }
+
+/* Resource Plan / Team Members key-value styling */
+.charter-kv { width: 100%; border-collapse: collapse; }
+.charter-kv td { padding: 6px 4px; font-size: 12.5px; vertical-align: top; border-bottom: 1px solid var(--border-soft); }
+.charter-kv tr:last-child td { border-bottom: none; }
+.charter-kv td:first-child { font-weight: 700; color: var(--ink-soft); width: 42%; background: var(--primary-soft); border-radius: 4px 0 0 4px; padding-left: 8px; }
+.charter-kv td:last-child { color: var(--ink); }
+
+/* Milestones table */
+.charter-milestones { width: 100%; border-collapse: collapse; }
+.charter-milestones td { padding: 5px 4px; font-size: 12.5px; border-bottom: 1px solid var(--border-soft); }
+.charter-milestones tr:last-child td { border-bottom: none; }
+.charter-milestones td:last-child { text-align: right; color: var(--ink-soft); white-space: nowrap; }
+
+/* Editor: structured form */
+.charter-editor-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.charter-editor-cell { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; background: var(--bg); }
+.charter-editor-cell__label { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--ink-soft); margin-bottom: 6px; }
+.charter-editor-cell textarea, .charter-editor-cell input[type="text"], .charter-editor-cell input[type="date"] {
+  width: 100%; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+  font-size: 12.5px; font-family: inherit; resize: vertical; line-height: 1.5;
+}
+.charter-editor-cell textarea { min-height: 96px; }
+.charter-editor-kv-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+.charter-editor-kv-row label { flex: 0 0 90px; font-size: 11.5px; color: var(--ink-soft); font-weight: 600; }
+.charter-editor-kv-row input { flex: 1; }
+.charter-milestone-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+.charter-milestone-row input[type="text"] { flex: 1; }
+.charter-milestone-row input[type="date"] { flex: 0 0 132px; }
+.charter-milestone-row .icon-btn { flex: 0 0 auto; }
+.charter-hint { font-size: 11px; color: var(--ink-faint); margin-bottom: 10px; }
+
+[data-theme="dark"] { --charter-navy: #34496B; }
+
+@media (max-width: 860px) {
+  .charter-grid, .charter-editor-grid { grid-template-columns: 1fr; }
+  .charter-editor-kv-row { flex-wrap: wrap; }
+  .charter-editor-kv-row label { flex: 0 0 100%; }
+}
+
 /* ---- Project cards ---- */
 .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .project-card { padding: 18px; position: relative; overflow: hidden; cursor: pointer; }
