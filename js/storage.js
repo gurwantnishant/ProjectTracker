@@ -14,12 +14,15 @@ const DataStore = (() => {
     milestones: 'flowspace_milestones',
     members: 'flowspace_members',
     settings: 'flowspace_settings',
-    notifications: 'flowspace_notifications'
+    notifications: 'flowspace_notifications',
+    auditLog: 'flowspace_audit_log'
   };
+
+  const MAX_AUDIT_ENTRIES = 1000;
 
   let mode = 'local'; // 'local' | 'firestore'
   let db = null;
-  let cache = { projects: [], tasks: [], portfolios: [], milestones: [], members: [] };
+  let cache = { projects: [], tasks: [], portfolios: [], milestones: [], members: [], auditLog: [] };
   const listeners = new Set();
 
   function notify(kind) {
@@ -76,24 +79,27 @@ const DataStore = (() => {
 
   async function loadAll() {
     if (mode === 'firestore') {
-      const [pSnap, tSnap, pfSnap, mSnap, memSnap] = await Promise.all([
+      const [pSnap, tSnap, pfSnap, mSnap, memSnap, auditSnap] = await Promise.all([
         db.collection('flowspace').doc('projects').get(),
         db.collection('flowspace').doc('tasks').get(),
         db.collection('flowspace').doc('portfolios').get(),
         db.collection('flowspace').doc('milestones').get(),
-        db.collection('flowspace').doc('members').get()
+        db.collection('flowspace').doc('members').get(),
+        db.collection('flowspace').doc('auditLog').get()
       ]);
       cache.projects = (pSnap.exists && pSnap.data().items) || [];
       cache.tasks = (tSnap.exists && tSnap.data().items) || [];
       cache.portfolios = (pfSnap.exists && pfSnap.data().items) || [];
       cache.milestones = (mSnap.exists && mSnap.data().items) || [];
       cache.members = (memSnap.exists && memSnap.data().items) || [];
+      cache.auditLog = (auditSnap.exists && auditSnap.data().items) || [];
     } else {
       cache.projects = localGet(LOCAL_KEYS.projects, []);
       cache.tasks = localGet(LOCAL_KEYS.tasks, []);
       cache.portfolios = localGet(LOCAL_KEYS.portfolios, []);
       cache.milestones = localGet(LOCAL_KEYS.milestones, []);
       cache.members = localGet(LOCAL_KEYS.members, []);
+      cache.auditLog = localGet(LOCAL_KEYS.auditLog, []);
     }
   }
 
@@ -127,6 +133,7 @@ const DataStore = (() => {
     getPortfolios() { return cache.portfolios; },
     getMilestones() { return cache.milestones; },
     getMembers() { return cache.members; },
+    getAuditLog() { return cache.auditLog; },
 
     async setProjects(items) {
       cache.projects = items;
@@ -180,6 +187,13 @@ const DataStore = (() => {
       cache.members = items;
       await persist('members');
       notify('members');
+    },
+
+    async appendAuditLog(entries) {
+      if (!entries || !entries.length) return;
+      cache.auditLog = [...entries, ...cache.auditLog].slice(0, MAX_AUDIT_ENTRIES);
+      await persist('auditLog');
+      notify('auditLog');
     },
 
     onChange(cb) { listeners.add(cb); return () => listeners.delete(cb); },

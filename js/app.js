@@ -9,6 +9,7 @@ const App = (() => {
     { key: 'projects', label: 'Projects', icon: '📁' },
     { key: 'tasks', label: 'Tasks', icon: '📋' },
     { key: 'gantt', label: 'Timeline', icon: '📅' },
+    { key: 'activity', label: 'Activity', icon: '🕓' },
     { key: 'admin', label: 'Admin', icon: '🛡' },
     { key: 'settings', label: 'Settings', icon: '⚙' }
   ];
@@ -41,6 +42,7 @@ const App = (() => {
       case 'projects': Projects.render(main, { focusId: state.focusId }); break;
       case 'tasks': Tasks.render(main, { focusId: state.focusId }); break;
       case 'gantt': Gantt.render(main); break;
+      case 'activity': AuditLog.render(main); break;
       case 'admin': Admin.render(main); break;
       case 'settings': renderSettings(main); break;
     }
