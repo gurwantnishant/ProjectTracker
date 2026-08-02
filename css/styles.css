@@ -492,6 +492,34 @@ svg.gantt-deps { position: absolute; top: 0; left: 0; pointer-events: none; over
 .form-field input.is-invalid { border-color: #C8393A; box-shadow: 0 0 0 2px rgba(200, 57, 58, 0.15); }
 .form-field__hint { font-size: 11px; color: var(--ink-faint); margin-top: 4px; }
 .form-field__hint--error { color: #C8393A; font-weight: 600; }
+
+/* ---- Subtasks ---- */
+.imp-row { display: flex; align-items: center; gap: 8px; }
+.imp-row__level { flex: 0 0 108px; font-size: 12px; padding: 6px 8px; }
+.imp-row__name { flex: 1; padding: 7px 10px; font-size: 12.5px; }
+.imp-row--milestone { font-weight: 700; }
+.imp-row--task { margin-left: 22px; }
+.imp-row--subtask { margin-left: 44px; }
+.imp-row--task .imp-row__name, .imp-row--subtask .imp-row__name { font-weight: 400; }
+.imp-row__remove {
+  flex: none; width: 26px; height: 26px; border: none; background: transparent;
+  color: var(--ink-faint); border-radius: var(--radius-sm); cursor: pointer; font-size: 13px;
+}
+.imp-row__remove:hover { background: var(--coral-soft, rgba(200,57,58,0.1)); color: #C8393A; }
+.subtask-list { display: flex; flex-direction: column; gap: 6px; }
+.subtask-list:empty::before { content: "No subtasks yet."; color: var(--ink-faint); font-size: 12.5px; }
+.subtask-row { display: flex; align-items: center; gap: 8px; }
+.subtask-row .subtask-check { flex: none; width: 16px; height: 16px; padding: 0; }
+.subtask-row .subtask-name { flex: 1; padding: 7px 10px; font-size: 12.5px; }
+.subtask-row .subtask-remove {
+  flex: none; background: transparent; border: none; color: var(--ink-faint);
+  cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius-sm);
+}
+.subtask-row .subtask-remove:hover { background: var(--coral-soft, rgba(200,57,58,0.1)); color: #C8393A; }
+.form-field__readonly {
+  padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--border-soft); color: var(--ink); font-size: 13px; font-weight: 700;
+}
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(8px); } }
 
