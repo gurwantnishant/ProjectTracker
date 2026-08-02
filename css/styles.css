@@ -572,3 +572,104 @@ kbd { background: var(--border-soft); border: 1px solid var(--border); border-ra
   .search-box { max-width: none; }
   .sidebar__collapse-btn { display: none; }
 }
+
+/* ============================================================
+   DASHBOARD — PROJECT SELECTOR, HERO, MODERN CARDS
+   ============================================================ */
+.project-select-wrap { position: relative; display: inline-block; }
+.project-select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px 34px 10px 14px; font-weight: 700; font-size: 13px; color: var(--ink);
+  cursor: pointer; min-width: 210px; max-width: 260px; box-shadow: var(--shadow-sm);
+  font-family: inherit;
+}
+.project-select:hover { border-color: var(--primary); }
+.project-select-wrap::after {
+  content: '▾'; position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: var(--ink-faint); font-size: 12px;
+}
+
+/* ---- modern metric cards with gradient icon chips ---- */
+.metric-card--modern { padding: 18px; gap: 4px; }
+.metric-card__chip {
+  width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; margin-bottom: 6px; box-shadow: 0 4px 10px -4px rgba(31,36,48,0.35);
+}
+.metric-card__sub { font-size: 11px; margin-top: 1px; }
+.chip--primary { background: linear-gradient(135deg, var(--primary), #9092FF); }
+.chip--coral   { background: linear-gradient(135deg, var(--coral), #FFA8A8); }
+.chip--teal    { background: linear-gradient(135deg, var(--teal), #6BE9D4); }
+.chip--amber   { background: linear-gradient(135deg, var(--amber), #FFD27D); }
+.chip--violet  { background: linear-gradient(135deg, var(--violet), #D6A4FF); }
+.chip--sky     { background: linear-gradient(135deg, var(--sky), #92DBFA); }
+
+/* ---- project hero (bold gradient / glassmorphism) ---- */
+.proj-hero {
+  position: relative; border-radius: var(--radius-lg); padding: 26px 28px; margin-bottom: 20px;
+  color: #fff; overflow: hidden;
+  background: linear-gradient(135deg, var(--hero-color, var(--primary)) 0%, color-mix(in srgb, var(--hero-color, var(--primary)) 45%, #15122c 100%) 100%);
+  box-shadow: var(--shadow-lg);
+}
+.proj-hero::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at 88% -20%, rgba(255,255,255,0.35), transparent 55%);
+  pointer-events: none;
+}
+.proj-hero::after {
+  content: ''; position: absolute; inset: 0;
+  backdrop-filter: blur(0px);
+  background: radial-gradient(circle at 0% 120%, rgba(255,255,255,0.12), transparent 50%);
+  pointer-events: none;
+}
+.proj-hero__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; flex-wrap: wrap; position: relative; z-index: 1; }
+.proj-hero__badges { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 10px; }
+.proj-hero .badge {
+  background: rgba(255,255,255,0.18); color: #fff; backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.28);
+}
+.proj-hero__name { font-family: var(--font-display); font-size: 25px; font-weight: 800; letter-spacing: -0.01em; margin-bottom: 6px; }
+.proj-hero__desc { color: rgba(255,255,255,0.86); max-width: 620px; font-size: 13.5px; line-height: 1.55; }
+.proj-hero__actions { display: flex; gap: 8px; position: relative; z-index: 1; flex-wrap: wrap; }
+.proj-hero__actions .btn-secondary, .proj-hero__actions .btn-ghost {
+  background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.32); color: #fff;
+}
+.proj-hero__actions .btn-secondary:hover, .proj-hero__actions .btn-ghost:hover { background: rgba(255,255,255,0.3); }
+.proj-hero__meta {
+  display: flex; gap: 26px; flex-wrap: wrap; margin-top: 20px; position: relative; z-index: 1;
+  padding-top: 18px; border-top: 1px solid rgba(255,255,255,0.2);
+}
+.proj-hero__meta-item { font-size: 11.5px; color: rgba(255,255,255,0.72); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.proj-hero__meta-item strong { display: flex; align-items: center; font-size: 14.5px; color: #fff; font-weight: 700; margin-top: 4px; text-transform: none; letter-spacing: 0; }
+
+/* ---- mini timeline (project gantt-lite) ---- */
+.mini-timeline { position: relative; margin: 6px 0 8px; }
+.mini-timeline__track { position: relative; height: 10px; border-radius: 6px; background: var(--border-soft); margin-top: 18px; }
+.mini-timeline__fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 6px; background: var(--card-color, var(--primary)); transition: width 0.3s ease; }
+.mini-timeline__today { position: absolute; top: -6px; width: 2px; height: 22px; background: var(--ink); opacity: 0.5; border-radius: 1px; }
+.mini-timeline__ms {
+  position: absolute; top: -4px; width: 13px; height: 13px; transform: translateX(-50%) rotate(45deg);
+  border: 2px solid var(--surface); box-shadow: var(--shadow-sm);
+}
+.mini-timeline__labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-faint); margin-top: 8px; font-weight: 600; }
+
+/* ---- budget bar ---- */
+.budget-bar { height: 12px; border-radius: 7px; background: var(--border-soft); overflow: hidden; }
+.budget-bar__fill { height: 100%; border-radius: 7px; transition: width 0.3s ease; }
+.budget-bar__fill.is-ok { background: linear-gradient(90deg, var(--teal), #6BE9D4); }
+.budget-bar__fill.is-over { background: linear-gradient(90deg, var(--coral), #FF9292); }
+
+/* ---- team chips ---- */
+.team-chip {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--border-soft);
+  border-radius: 20px; padding: 4px 10px 4px 4px; font-size: 12px; font-weight: 600;
+  margin: 0 6px 6px 0; color: var(--ink-soft);
+}
+
+/* ---- clickable progress rows on org overview ---- */
+.progress-overview-row:hover .progress-bar__fill { filter: brightness(1.1); }
+
+@media (max-width: 700px) {
+  .proj-hero__meta { gap: 16px; }
+  .project-select { min-width: 160px; }
+}
