@@ -60,6 +60,7 @@ const Projects = (() => {
           <div class="view-header__subtitle">${filtered.length} of ${all.filter(p => !p.archived).length} projects</div>
         </div>
         <div class="view-header__actions">
+          <button class="btn-secondary" id="importProjectBtn">📥 Import Project</button>
           <button class="btn-primary" id="newProjectBtn">+ New Project</button>
         </div>
       </div>
@@ -80,6 +81,7 @@ const Projects = (() => {
     `;
 
     document.getElementById('newProjectBtn').addEventListener('click', () => openCreateModal());
+    document.getElementById('importProjectBtn').addEventListener('click', () => Importer.openModal());
     document.getElementById('projSearch').addEventListener('input', Utils.debounce((e) => { filters.query = e.target.value; render(main, opts); }, 200));
     document.getElementById('projStatusFilter').addEventListener('change', (e) => { filters.status = e.target.value; render(main, opts); });
     document.getElementById('projPriorityFilter').addEventListener('change', (e) => { filters.priority = e.target.value; render(main, opts); });
@@ -252,10 +254,11 @@ const Projects = (() => {
     Utils.openModal({
       title: 'New Project',
       bodyHtml: formHtml(draft),
-      footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveProjectBtn">Create Project</button>`,
+      footerHtml: `<button class="btn-ghost" id="switchToImportBtn" style="margin-right:auto;">📥 Import from file/text instead</button><button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveProjectBtn">Create Project</button>`,
       onMount: (root, close) => {
         getColor = Utils.bindColorPicker(root);
         root.querySelector('[data-close]').addEventListener('click', close);
+        root.querySelector('#switchToImportBtn').addEventListener('click', () => { close(); Importer.openModal(); });
         root.querySelector('#saveProjectBtn').addEventListener('click', () => {
           const data = readForm(root);
           const project = { id: Utils.uid('proj'), ...data, progress: 0, color: getColor(), archived: false, createdAt: Date.now() };
@@ -333,8 +336,11 @@ const Projects = (() => {
           </div>
           <div class="progress-bar" style="--card-color:${Utils.colorHex(project.color)}"><div class="progress-bar__fill" style="width:${project.progress}%"></div></div>
           <div class="panel__title" style="margin-top:20px;">Tasks (${tasks.length})</div>
-          ${tasks.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>Task</th><th>Assignee</th><th>Status</th><th>Due</th></tr></thead>
-            <tbody>${tasks.slice(0, 8).map(t => `<tr><td>${Utils.escapeHtml(t.name)}</td><td>${Utils.escapeHtml(t.assignedTo)}</td><td><span class="badge ${statusClass(t.status)}">${t.status}</span></td><td>${Utils.fmtDate(t.dueDate)}</td></tr>`).join('')}</tbody>
+          ${tasks.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>Task</th><th>Milestone</th><th>Assignee</th><th>Status</th><th>Due</th></tr></thead>
+            <tbody>${tasks.slice(0, 8).map(t => {
+              const ms = t.milestoneId ? DataStore.getMilestones().find(m => m.id === t.milestoneId) : null;
+              return `<tr><td>${Utils.escapeHtml(t.name)}</td><td>${ms ? Utils.escapeHtml(ms.name) : '<span class="text-faint">—</span>'}</td><td>${Utils.escapeHtml(t.assignedTo)}</td><td><span class="badge ${statusClass(t.status)}">${t.status}</span></td><td>${Utils.fmtDate(t.dueDate)}</td></tr>`;
+            }).join('')}</tbody>
           </table></div>` : `<div class="text-faint">No tasks yet for this project.</div>`}
           <div id="milestonesSection"></div>
         </div>

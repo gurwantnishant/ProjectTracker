@@ -144,6 +144,7 @@ const Tasks = (() => {
         </div>
         <div class="project-card__desc">${Utils.escapeHtml(proj ? proj.name : 'No project')}</div>
         <div class="progress-bar" style="--card-color:${Utils.colorHex(proj?.color)}"><div class="progress-bar__fill" style="width:${t.progress}%"></div></div>
+        ${(t.subtasks || []).length ? `<div class="text-faint" style="font-size:11px; margin-top:4px;">${t.subtasks.filter(s => s.completed).length}/${t.subtasks.length} subtasks done</div>` : ''}
         <div class="project-card__meta">
           <span><span class="avatar">${Utils.initials(t.assignedTo)}</span> ${Utils.escapeHtml(t.assignedTo)}</span>
           <span class="text-faint">Due ${Utils.fmtDate(t.dueDate)}</span>
@@ -287,44 +288,156 @@ const Tasks = (() => {
     err.fields.forEach(sel => root.querySelector(sel).classList.add('is-invalid'));
   }
 
+  // ---------------- subtasks ----------------
+  // Subtask completion drives the task's Progress % automatically, the same
+  // way completed tasks drive a Project's Progress % (see storage.js setTasks).
+  // progress = (completed subtasks / total subtasks) * 100, rounded.
+  function subtaskRowHtml(s) {
+    return `<div class="subtask-row" data-id="${s.id}">
+      <input type="checkbox" class="subtask-check" ${s.completed ? 'checked' : ''}>
+      <input type="text" class="subtask-name" value="${Utils.escapeHtml(s.name || '')}" placeholder="Subtask name">
+      <button type="button" class="subtask-remove" title="Remove subtask">✕</button>
+    </div>`;
+  }
+
+  function subtasksFieldHtml(subtasks) {
+    const total = subtasks.length;
+    const done = subtasks.filter(s => s.completed).length;
+    return `
+      <div class="form-field span-2">
+        <label>Subtasks <span class="text-faint" id="subtaskCountLabel" style="font-weight:600;">${total ? `(${done}/${total} done)` : ''}</span></label>
+        <div id="subtaskList" class="subtask-list">${subtasks.map(subtaskRowHtml).join('')}</div>
+        <button type="button" class="btn-secondary btn-sm" id="addSubtaskBtn" style="margin-top:6px; align-self:flex-start;">+ Add Subtask</button>
+      </div>
+    `;
+  }
+
+  // Wires up add/remove/toggle behavior for the subtasks list rendered above,
+  // and keeps the Progress (%) field in sync: when subtasks exist, Progress
+  // is auto-computed and the manual field is hidden (read-only), mirroring
+  // how Project Progress is auto-derived and not manually editable.
+  function bindSubtaskControls(root) {
+    const list = root.querySelector('#subtaskList');
+    const countLabel = root.querySelector('#subtaskCountLabel');
+    const progressWrap = root.querySelector('#f_progressWrap');
+    const progressAutoWrap = root.querySelector('#f_progressAutoWrap');
+    const progressAutoValue = root.querySelector('#f_progressAutoValue');
+
+    function updateProgressUI() {
+      const rows = list.querySelectorAll('.subtask-row');
+      const total = rows.length;
+      const done = list.querySelectorAll('.subtask-check:checked').length;
+      countLabel.textContent = total ? `(${done}/${total} done)` : '';
+      if (total) {
+        progressWrap.style.display = 'none';
+        progressAutoWrap.style.display = '';
+        progressAutoValue.textContent = Math.round((done / total) * 100) + '%';
+      } else {
+        progressWrap.style.display = '';
+        progressAutoWrap.style.display = 'none';
+      }
+    }
+
+    function bindRow(row) {
+      row.querySelector('.subtask-check').addEventListener('change', updateProgressUI);
+      row.querySelector('.subtask-remove').addEventListener('click', () => { row.remove(); updateProgressUI(); });
+    }
+
+    function addRow(subtask) {
+      const row = document.createElement('div');
+      row.className = 'subtask-row';
+      row.dataset.id = subtask.id;
+      row.innerHTML = `
+        <input type="checkbox" class="subtask-check" ${subtask.completed ? 'checked' : ''}>
+        <input type="text" class="subtask-name" value="${Utils.escapeHtml(subtask.name || '')}" placeholder="Subtask name">
+        <button type="button" class="subtask-remove" title="Remove subtask">✕</button>
+      `;
+      list.appendChild(row);
+      bindRow(row);
+      return row;
+    }
+
+    list.querySelectorAll('.subtask-row').forEach(bindRow);
+    root.querySelector('#addSubtaskBtn').addEventListener('click', () => {
+      const row = addRow({ id: Utils.uid('subtask'), name: '', completed: false });
+      row.querySelector('.subtask-name').focus();
+    });
+
+    updateProgressUI();
+  }
+
+  function readSubtasks(root) {
+    return [...root.querySelectorAll('#subtaskList .subtask-row')]
+      .map(row => ({
+        id: row.dataset.id,
+        name: row.querySelector('.subtask-name').value.trim(),
+        completed: row.querySelector('.subtask-check').checked
+      }))
+      .filter(s => s.name); // drop rows left blank
+  }
+
+  function milestoneOptionsHtml(projectId, current) {
+    const list = DataStore.getMilestones().filter(m => m.projectId === projectId);
+    const extra = (current && !list.some(m => m.id === current))
+      ? `<option value="${current}" selected>(removed milestone)</option>` : '';
+    return `<option value="">No milestone</option>${extra}${list.map(m =>
+      `<option value="${m.id}" ${current === m.id ? 'selected' : ''}>${Utils.escapeHtml(m.name)}</option>`
+    ).join('')}`;
+  }
+
   function formHtml(t, projects) {
     const availableDeps = DataStore.getTasks().filter(x => x.id !== t.id && x.projectId === (t.projectId || projects[0]?.id));
+    const subtasks = t.subtasks || [];
+    const initialProjectId = t.projectId || projects[0]?.id;
     return `
       <div class="form-grid">
         <div class="form-field span-2"><label>Task Name</label><input type="text" id="f_name" value="${Utils.escapeHtml(t.name || '')}" placeholder="e.g. Migrate staging tables"></div>
         <div class="form-field span-2"><label>Description</label><textarea id="f_desc">${Utils.escapeHtml(t.description || '')}</textarea></div>
         <div class="form-field"><label>Project</label><select id="f_project">${projects.map(p => `<option value="${p.id}" ${t.projectId === p.id ? 'selected' : ''}>${Utils.escapeHtml(p.name)}</option>`).join('')}</select></div>
+        <div class="form-field"><label>Milestone (optional)</label><select id="f_milestone">${milestoneOptionsHtml(initialProjectId, t.milestoneId || '')}</select></div>
         <div class="form-field"><label>Assigned To</label><select id="f_assignee">${Utils.memberOptionsHtml(t.assignedTo || '')}</select></div>
         <div class="form-field"><label>Start Date</label><input type="date" id="f_start" value="${t.startDate || Utils.todayISO()}"></div>
         <div class="form-field"><label>Due Date</label><input type="date" id="f_due" value="${t.dueDate || Utils.todayISO()}"></div>
         <div class="form-field span-2"><div class="form-field__hint" id="f_dateHint"></div></div>
         <div class="form-field"><label>Priority</label><select id="f_priority">${PRIORITIES.map(x => `<option ${t.priority === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
         <div class="form-field"><label>Status</label><select id="f_status">${STATUSES.map(x => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-        <div class="form-field"><label>Progress (%)</label><input type="number" id="f_progress" min="0" max="100" value="${t.progress ?? 0}"></div>
+        <div class="form-field" id="f_progressWrap"><label>Progress (%)</label><input type="number" id="f_progress" min="0" max="100" value="${t.progress ?? 0}"></div>
+        <div class="form-field" id="f_progressAutoWrap" style="display:none;"><label>Progress (auto from subtasks)</label><div class="form-field__readonly" id="f_progressAutoValue">0%</div></div>
         <div class="form-field"><label>Estimated Hours</label><input type="number" id="f_est" min="0" value="${t.estimatedHours ?? 0}"></div>
         <div class="form-field"><label>Actual Hours</label><input type="number" id="f_actual" min="0" value="${t.actualHours ?? 0}"></div>
         <div class="form-field"><label>Depends On</label><select id="f_dep"><option value="">None</option>${availableDeps.map(d => `<option value="${d.id}" ${t.dependency?.taskId === d.id ? 'selected' : ''}>${Utils.escapeHtml(d.name)}</option>`).join('')}</select></div>
-        <div class="form-field span-2"><label>Dependency Type</label>
+        <div class="form-field"><label>Dependency Type</label>
           <select id="f_depType">
             ${['FS', 'SS', 'FF', 'SF'].map(x => `<option value="${x}" ${t.dependency?.type === x ? 'selected' : ''}>${x} — ${{FS:'Finish to Start', SS:'Start to Start', FF:'Finish to Finish', SF:'Start to Finish'}[x]}</option>`).join('')}
           </select>
         </div>
+        ${subtasksFieldHtml(subtasks)}
       </div>
     `;
   }
 
   function readForm(root) {
     const depId = root.querySelector('#f_dep').value;
+    const subtasks = readSubtasks(root);
+    const manualProgress = Utils.clamp(parseInt(root.querySelector('#f_progress').value) || 0, 0, 100);
+    // Mirrors Project Progress logic (see storage.js setTasks): when the task
+    // has subtasks, Progress % is derived from completed/total subtasks and
+    // the manual field is ignored. Otherwise fall back to the manual value.
+    const progress = subtasks.length
+      ? Math.round((subtasks.filter(s => s.completed).length / subtasks.length) * 100)
+      : manualProgress;
     return {
       name: root.querySelector('#f_name').value.trim() || 'Untitled Task',
       description: root.querySelector('#f_desc').value.trim(),
       projectId: root.querySelector('#f_project').value,
+      milestoneId: root.querySelector('#f_milestone').value || null,
       assignedTo: root.querySelector('#f_assignee').value,
       startDate: root.querySelector('#f_start').value,
       dueDate: root.querySelector('#f_due').value,
       priority: root.querySelector('#f_priority').value,
       status: root.querySelector('#f_status').value,
-      progress: Utils.clamp(parseInt(root.querySelector('#f_progress').value) || 0, 0, 100),
+      progress,
+      subtasks,
       estimatedHours: parseInt(root.querySelector('#f_est').value) || 0,
       actualHours: parseInt(root.querySelector('#f_actual').value) || 0,
       dependency: depId ? { taskId: depId, type: root.querySelector('#f_depType').value } : null
@@ -342,7 +455,8 @@ const Tasks = (() => {
       footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveTaskBtn">Create Task</button>`,
       onMount: (root, close) => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
-        root.querySelector('#f_project').addEventListener('change', (e) => applyDateBounds(root, projectById(e.target.value)));
+        bindSubtaskControls(root);
+        root.querySelector('#f_project').addEventListener('change', (e) => { applyDateBounds(root, projectById(e.target.value)); root.querySelector('#f_milestone').innerHTML = milestoneOptionsHtml(e.target.value, ''); });
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveTaskBtn').addEventListener('click', () => {
           const data = readForm(root);
@@ -365,7 +479,8 @@ const Tasks = (() => {
       footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveTaskBtn">Save Changes</button>`,
       onMount: (root, close) => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
-        root.querySelector('#f_project').addEventListener('change', (e) => applyDateBounds(root, projectById(e.target.value)));
+        bindSubtaskControls(root);
+        root.querySelector('#f_project').addEventListener('change', (e) => { applyDateBounds(root, projectById(e.target.value)); root.querySelector('#f_milestone').innerHTML = milestoneOptionsHtml(e.target.value, ''); });
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveTaskBtn').addEventListener('click', () => {
           const data = readForm(root);
@@ -387,6 +502,7 @@ const Tasks = (() => {
     if (!task) return;
     const proj = projectOf(task);
     const warn = dependencyWarning(task);
+    const milestone = task.milestoneId ? DataStore.getMilestones().find(m => m.id === task.milestoneId) : null;
     Utils.openModal({
       title: task.name, wide: true,
       bodyHtml: `
@@ -394,6 +510,7 @@ const Tasks = (() => {
           <span class="badge ${statusClass(task.status)}">${task.status}</span>
           <span class="badge ${priClass(task.priority)}">${task.priority}</span>
           ${proj ? `<span class="tag"><span class="row-color-dot" style="background:${Utils.colorHex(proj.color)}"></span>${Utils.escapeHtml(proj.name)}</span>` : ''}
+          ${milestone ? `<span class="tag">🚩 ${Utils.escapeHtml(milestone.name)}</span>` : ''}
         </div>
         ${warn ? `<div class="card" style="padding:10px 14px; background:var(--coral-soft); color:#C8393A; margin-bottom:14px; font-size:12.5px;">⚠ ${Utils.escapeHtml(warn)}</div>` : ''}
         <p class="text-soft">${Utils.escapeHtml(task.description || 'No description yet.')}</p>
@@ -404,6 +521,15 @@ const Tasks = (() => {
           <div><div class="text-faint" style="font-size:11px;">PROGRESS</div><div>${task.progress}%</div></div>
         </div>
         <div class="progress-bar" style="--card-color:${Utils.colorHex(proj?.color)}"><div class="progress-bar__fill" style="width:${task.progress}%"></div></div>
+
+        ${(task.subtasks || []).length ? `
+        <div class="panel__title" style="margin-top:20px;">Subtasks (${task.subtasks.filter(s => s.completed).length}/${task.subtasks.length} done)</div>
+        <div style="margin-bottom:10px;">
+          ${task.subtasks.map(s => `<div style="padding:6px 0; border-bottom:1px solid var(--border-soft); font-size:12.5px; display:flex; align-items:center; gap:8px;">
+            <span>${s.completed ? '✅' : '⬜'}</span>
+            <span style="${s.completed ? 'text-decoration:line-through; color:var(--ink-faint);' : ''}">${Utils.escapeHtml(s.name)}</span>
+          </div>`).join('')}
+        </div>` : ''}
 
         <div class="panel__title" style="margin-top:20px;">Comments</div>
         <div id="commentsList" style="margin-bottom:10px;">
