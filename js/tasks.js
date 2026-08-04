@@ -322,6 +322,8 @@ const Tasks = (() => {
     const progressWrap = root.querySelector('#f_progressWrap');
     const progressAutoWrap = root.querySelector('#f_progressAutoWrap');
     const progressAutoValue = root.querySelector('#f_progressAutoValue');
+    const statusSelect = root.querySelector('#f_status');
+    const statusHint = root.querySelector('#f_statusHint');
 
     function updateProgressUI() {
       const rows = list.querySelectorAll('.subtask-row');
@@ -335,6 +337,23 @@ const Tasks = (() => {
       } else {
         progressWrap.style.display = '';
         progressAutoWrap.style.display = 'none';
+      }
+
+      // Subtask completion also drives Status, the same way it drives
+      // Progress above: once every subtask is checked off the task
+      // auto-completes; unchecking one afterward auto-reverts it to
+      // 'In Progress'. This is what lets the Milestone auto-sync in
+      // storage.js (which keys off task.status === 'Completed') actually
+      // fire once all of a milestone's tasks are done via their subtasks.
+      if (total) {
+        statusSelect.disabled = true;
+        statusHint.textContent = '(auto from subtasks)';
+        const allDone = done === total;
+        if (allDone) statusSelect.value = 'Completed';
+        else if (statusSelect.value === 'Completed') statusSelect.value = 'In Progress';
+      } else {
+        statusSelect.disabled = false;
+        statusHint.textContent = '';
       }
     }
 
@@ -400,7 +419,7 @@ const Tasks = (() => {
         <div class="form-field"><label>Due Date</label><input type="date" id="f_due" value="${t.dueDate || Utils.todayISO()}"></div>
         <div class="form-field span-2"><div class="form-field__hint" id="f_dateHint"></div></div>
         <div class="form-field"><label>Priority</label><select id="f_priority">${PRIORITIES.map(x => `<option ${t.priority === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-        <div class="form-field"><label>Status</label><select id="f_status">${STATUSES.map(x => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+        <div class="form-field"><label>Status <span class="text-faint" id="f_statusHint" style="font-weight:400; font-size:11px;"></span></label><select id="f_status">${STATUSES.map(x => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
         <div class="form-field" id="f_progressWrap"><label>Progress (%)</label><input type="number" id="f_progress" min="0" max="100" value="${t.progress ?? 0}"></div>
         <div class="form-field" id="f_progressAutoWrap" style="display:none;"><label>Progress (auto from subtasks)</label><div class="form-field__readonly" id="f_progressAutoValue">0%</div></div>
         <div class="form-field"><label>Estimated Hours</label><input type="number" id="f_est" min="0" value="${t.estimatedHours ?? 0}"></div>
@@ -426,6 +445,13 @@ const Tasks = (() => {
     const progress = subtasks.length
       ? Math.round((subtasks.filter(s => s.completed).length / subtasks.length) * 100)
       : manualProgress;
+    // Mirrors the live sync in bindSubtaskControls/updateProgressUI: when
+    // subtasks exist, Status is derived from their completion rather than
+    // trusted from the (disabled) dropdown, so it can't be saved stale.
+    let status = root.querySelector('#f_status').value;
+    if (subtasks.length) {
+      status = subtasks.every(s => s.completed) ? 'Completed' : (status === 'Completed' ? 'In Progress' : status);
+    }
     return {
       name: root.querySelector('#f_name').value.trim() || 'Untitled Task',
       description: root.querySelector('#f_desc').value.trim(),
@@ -435,7 +461,7 @@ const Tasks = (() => {
       startDate: root.querySelector('#f_start').value,
       dueDate: root.querySelector('#f_due').value,
       priority: root.querySelector('#f_priority').value,
-      status: root.querySelector('#f_status').value,
+      status,
       progress,
       subtasks,
       estimatedHours: parseInt(root.querySelector('#f_est').value) || 0,
