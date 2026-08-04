@@ -4,6 +4,13 @@
    DataStore.getProjects()/setProjects()/getTasks()/setTasks() and
    never needs to know whether data lives in Firestore or
    LocalStorage.
+
+   setTasks() also drives two auto-sync side effects, both scoped
+   to whatever projects/milestones the changed tasks touch:
+     - project.progress   = % of that project's tasks marked Completed
+     - milestone.completion/status = % / Completed state of whichever
+       tasks reference that milestone via task.milestoneId. A milestone
+       with zero linked tasks is left fully manual.
    ============================================================ */
 
 const DataStore = (() => {
@@ -141,12 +148,16 @@ const DataStore = (() => {
       notify('projects');
     },
     async setTasks(items) {
-      // Capture which projects were touched by the OLD task list too, so a
-      // deleted task's project still gets its progress recalculated (the
-      // deleted task's projectId won't appear in the new `items` list).
+      // Capture which projects/milestones were touched by the OLD task list
+      // too, so a deleted or reassigned task's old project/milestone still
+      // gets recalculated (its id won't appear in the new `items` list).
       const touchedProjectIds = new Set([
         ...cache.tasks.map(t => t.projectId),
         ...items.map(t => t.projectId)
+      ]);
+      const touchedMilestoneIds = new Set([
+        ...cache.tasks.map(t => t.milestoneId).filter(Boolean),
+        ...items.map(t => t.milestoneId).filter(Boolean)
       ]);
 
       cache.tasks = items;
@@ -171,6 +182,46 @@ const DataStore = (() => {
         cache.projects = updatedProjects;
         await persist('projects');
         notify('projects');
+      }
+
+      // Auto-sync each affected milestone with the tasks linked to it
+      // (task.milestoneId). Only milestones that actually have at least one
+      // linked task are touched — milestones with no linked tasks stay
+      // fully manual. completion% always tracks linked-task completion
+      // ratio; status flips to 'Completed' once all linked tasks are done,
+      // and un-completes back to 'In Progress' if a completed task under it
+      // gets reopened later.
+      let milestonesChanged = false;
+      const today = Utils.todayISO();
+      const updatedMilestones = cache.milestones.map(m => {
+        if (!touchedMilestoneIds.has(m.id)) return m;
+        const linkedTasks = cache.tasks.filter(t => t.milestoneId === m.id);
+        if (!linkedTasks.length) return m;
+
+        const doneCount = linkedTasks.filter(t => t.status === 'Completed').length;
+        const newCompletion = Math.round((doneCount / linkedTasks.length) * 100);
+        const allDone = doneCount === linkedTasks.length;
+
+        let newStatus = m.status;
+        let newActualDate = m.actualDate;
+        if (allDone && m.status !== 'Completed') {
+          newStatus = 'Completed';
+          newActualDate = m.actualDate || today;
+        } else if (!allDone && m.status === 'Completed') {
+          // A previously-completed milestone had one of its tasks reopened.
+          newStatus = 'In Progress';
+          newActualDate = null;
+        }
+
+        if (newCompletion !== m.completion || newStatus !== m.status || newActualDate !== m.actualDate) {
+          milestonesChanged = true;
+        }
+        return { ...m, completion: newCompletion, status: newStatus, actualDate: newActualDate };
+      });
+      if (milestonesChanged) {
+        cache.milestones = updatedMilestones;
+        await persist('milestones');
+        notify('milestones');
       }
     },
     async setPortfolios(items) {
