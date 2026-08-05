@@ -158,6 +158,7 @@ const Dashboard = (() => {
         </div>
         <div class="view-header__actions">
           ${projectSelectorHtml(allProjects)}
+          <button class="btn-secondary" id="dashEmailBtn">📧 Email Dashboard</button>
           <button class="btn-primary" id="dashNewProjectBtn">+ New Project</button>
         </div>
       </div>
@@ -165,6 +166,10 @@ const Dashboard = (() => {
     `;
 
     document.getElementById('dashNewProjectBtn').addEventListener('click', () => Projects.openCreateModal());
+    document.getElementById('dashEmailBtn').addEventListener('click', () => {
+      const label = viewingProject ? viewingProject.name : 'All Projects';
+      EmailExport.openModal(() => document.getElementById('dashBodyHost'), label);
+    });
     const select = document.getElementById('dashProjectSelect');
     select.addEventListener('change', (e) => { selectedProjectId = e.target.value; App.navigate('dashboard'); });
 
