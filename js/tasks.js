@@ -512,10 +512,8 @@ const Tasks = (() => {
           const data = readForm(root);
           const err = validateTaskDates(data, projectById(data.projectId));
           if (err) { showDateError(root, err); return; }
-          const tasks = DataStore.getTasks();
-          const idx = tasks.findIndex(t => t.id === task.id);
-          tasks[idx] = { ...task, ...data };
-          DataStore.setTasks([...tasks]);
+          const tasks = DataStore.getTasks().map(t => t.id === task.id ? { ...task, ...data } : t);
+          DataStore.setTasks(tasks);
           Utils.toast('Task updated');
           close();
         });
@@ -583,10 +581,9 @@ const Tasks = (() => {
         root.querySelector('#addCommentBtn').addEventListener('click', () => {
           const input = root.querySelector('#newCommentInput');
           if (!input.value.trim()) return;
-          const tasks = DataStore.getTasks();
-          const idx = tasks.findIndex(t => t.id === task.id);
-          tasks[idx].comments = [...(tasks[idx].comments || []), { text: input.value.trim(), author: 'You', date: Date.now() }];
-          DataStore.setTasks([...tasks]);
+          const newComment = { text: input.value.trim(), author: 'You', date: Date.now() };
+          const tasks = DataStore.getTasks().map(t => t.id === task.id ? { ...t, comments: [...(t.comments || []), newComment] } : t);
+          DataStore.setTasks(tasks);
           close();
           openDetailModal(task.id);
         });
