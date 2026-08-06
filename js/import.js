@@ -288,7 +288,7 @@ const Importer = (() => {
         subtasks: t.subtasks.map(name => ({ id: Utils.uid('subtask'), name, completed: false })),
         estimatedHours: 0,
         actualHours: 0,
-        dependency: null,
+        dependencies: [],
         comments: [],
         createdAt: Date.now()
       };

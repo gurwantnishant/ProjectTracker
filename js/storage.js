@@ -148,6 +148,18 @@ const DataStore = (() => {
       notify('projects');
     },
     async setTasks(items) {
+      // Run the dependency scheduling engine on every task-list write, so
+      // FS/SS/FF/SF successors (and their successors, and theirs...) always
+      // reflect their predecessors with no manual "refresh" step anywhere in
+      // the app — Gantt drag, the Task dialog, bulk import, and undo all
+      // funnel through this one place. See scheduling.js for the algorithm.
+      let clampedNames = [];
+      if (typeof Scheduling !== 'undefined') {
+        const result = Scheduling.recalcAll(items);
+        items = result.tasks;
+        clampedNames = result.clampedNames;
+      }
+
       // Capture which projects/milestones were touched by the OLD task list
       // too, so a deleted or reassigned task's old project/milestone still
       // gets recalculated (its id won't appear in the new `items` list).
@@ -222,6 +234,12 @@ const DataStore = (() => {
         cache.milestones = updatedMilestones;
         await persist('milestones');
         notify('milestones');
+      }
+
+      if (clampedNames.length && typeof Utils !== 'undefined') {
+        const names = [...new Set(clampedNames)];
+        const label = names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ');
+        Utils.toast(`Dependency scheduling kept "${label}" within its project's start/due dates`, { tone: 'danger' });
       }
     },
     async setPortfolios(items) {

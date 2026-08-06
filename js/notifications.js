@@ -19,11 +19,13 @@ const Notifications = (() => {
       } else if (t.status !== 'Completed' && t.dueDate >= today && t.dueDate <= soon) {
         notifs.push({ id: `task-soon-${t.id}`, icon: '📌', tone: 'amber', title: `Due in ${Utils.daysBetween(today, t.dueDate)}d: ${t.name}`, time: t.dueDate, target: { type: 'task', id: t.id } });
       }
-      if (t.dependency && t.status !== 'Completed') {
-        const dep = tasks.find(x => x.id === t.dependency.taskId);
-        if (dep && dep.status !== 'Completed' && t.dependency.type === 'FS' && t.status !== 'Not Started') {
-          notifs.push({ id: `dep-blocked-${t.id}`, icon: '🔗', tone: 'coral', title: `Dependency blocked: ${t.name} needs "${dep.name}" done`, time: today, target: { type: 'task', id: t.id } });
-        }
+      if (t.status !== 'Completed') {
+        Scheduling.depsOf(t).forEach(edge => {
+          const dep = tasks.find(x => x.id === edge.taskId);
+          if (dep && dep.status !== 'Completed' && edge.type === 'FS' && t.status !== 'Not Started') {
+            notifs.push({ id: `dep-blocked-${t.id}-${dep.id}`, icon: '🔗', tone: 'coral', title: `Dependency blocked: ${t.name} needs "${dep.name}" done`, time: today, target: { type: 'task', id: t.id } });
+          }
+        });
       }
     });
 

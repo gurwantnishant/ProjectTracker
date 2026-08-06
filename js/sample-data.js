@@ -133,7 +133,7 @@ const SampleData = (() => {
           priority: pick(priorities),
           status,
           progress,
-          dependency: (idx > 0 && Math.random() < 0.55) ? { taskId: prevTaskId, type: 'FS' } : null,
+          dependencies: (idx > 0 && Math.random() < 0.55) ? [{ taskId: prevTaskId, type: 'FS', lag: 0 }] : [],
           estimatedHours: estHours,
           actualHours: status === 'Not Started' ? 0 : Math.floor(estHours * (0.4 + Math.random() * 0.9)),
           comments: [],

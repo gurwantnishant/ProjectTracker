@@ -151,60 +151,31 @@ const Gantt = (() => {
     });
   }
 
+  // One dependency line per edge (a task can now have several
+  // predecessors), each anchored to the correct end of the predecessor's
+  // bar (start for SS/SF links, finish for FS/FF links) and the correct
+  // end of the successor's bar (start for FS/SS, finish for FF/SF).
   function buildDependencyLines(tasks, range, rowIndexById) {
     let svg = '';
     tasks.forEach(t => {
-      if (!t.dependency) return;
-      const pred = tasks.find(x => x.id === t.dependency.taskId);
-      if (!pred || rowIndexById[pred.id] === undefined || rowIndexById[t.id] === undefined) return;
-      const predEndX = Utils.daysBetween(range.start, pred.dueDate) * pxPerDay();
-      const predY = rowIndexById[pred.id] * 40 + 20;
-      const startX = Utils.daysBetween(range.start, t.startDate) * pxPerDay();
-      const startY = rowIndexById[t.id] * 40 + 20;
-      const midX = (predEndX + startX) / 2;
-      const blocked = pred.status !== 'Completed';
-      svg += `<path d="M ${predEndX} ${predY} C ${midX} ${predY}, ${midX} ${startY}, ${startX} ${startY}" fill="none" stroke="${blocked ? 'var(--coral)' : 'var(--ink-faint)'}" stroke-width="1.5" stroke-dasharray="${blocked ? '4 3' : 'none'}" marker-end="url(#arrow)"/>`;
+      Scheduling.depsOf(t).forEach(edge => {
+        const pred = tasks.find(x => x.id === edge.taskId);
+        if (!pred || rowIndexById[pred.id] === undefined || rowIndexById[t.id] === undefined) return;
+        const predAnchorDate = (edge.type === 'SS' || edge.type === 'SF') ? pred.startDate : pred.dueDate;
+        const succAnchorDate = (edge.type === 'FF' || edge.type === 'SF') ? t.dueDate : t.startDate;
+        const predX = Utils.daysBetween(range.start, predAnchorDate) * pxPerDay();
+        const predY = rowIndexById[pred.id] * 40 + 20;
+        const startX = Utils.daysBetween(range.start, succAnchorDate) * pxPerDay();
+        const startY = rowIndexById[t.id] * 40 + 20;
+        const midX = (predX + startX) / 2;
+        const blocked = pred.status !== 'Completed';
+        svg += `<path d="M ${predX} ${predY} C ${midX} ${predY}, ${midX} ${startY}, ${startX} ${startY}" fill="none" stroke="${blocked ? 'var(--coral)' : 'var(--ink-faint)'}" stroke-width="1.5" stroke-dasharray="${blocked ? '4 3' : 'none'}" marker-end="url(#arrow)"/>`;
+      });
     });
     return `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--ink-faint)"/></marker></defs>${svg}`;
   }
 
   function projectOf(t) { return DataStore.getProjects().find(p => p.id === t.projectId); }
-
-  // Keeps a start/due pair within a project's start/due window, preserving duration where possible.
-  function clampToProject(newStart, newDue, project) {
-    if (!project || !project.startDate || !project.dueDate) return { start: newStart, due: newDue, clamped: false };
-    const dur = Math.max(1, Utils.daysBetween(newStart, newDue));
-    let start = newStart, due = newDue, clamped = false;
-    if (start < project.startDate) { start = project.startDate; due = Utils.addDays(start, dur); clamped = true; }
-    if (due > project.dueDate) {
-      due = project.dueDate;
-      start = Utils.addDays(due, -dur);
-      if (start < project.startDate) start = project.startDate;
-      clamped = true;
-    }
-    return { start, due, clamped };
-  }
-
-  function shiftDependents(taskId, deltaDays, tasksMap, visited) {
-    if (visited.has(taskId)) return;
-    visited.add(taskId);
-    Object.values(tasksMap).forEach(t => {
-      if (t.dependency && t.dependency.taskId === taskId) {
-        if (t.dependency.type === 'FS') {
-          const pred = tasksMap[taskId];
-          if (pred.dueDate > t.startDate) {
-            const dur = Utils.daysBetween(t.startDate, t.dueDate);
-            const proposedStart = pred.dueDate;
-            const proposedDue = Utils.addDays(proposedStart, dur);
-            const { start, due } = clampToProject(proposedStart, proposedDue, projectOf(t));
-            t.startDate = start;
-            t.dueDate = due;
-            shiftDependents(t.id, 0, tasksMap, visited);
-          }
-        }
-      }
-    });
-  }
 
   function bindDragAndResize(host, range) {
     const day = pxPerDay();
@@ -245,14 +216,14 @@ const Gantt = (() => {
         let newDue = Utils.addDays(newStart, newDur);
 
         const tasksArr = DataStore.getTasks();
-        const tasksMap = {};
-        tasksArr.forEach(t => tasksMap[t.id] = { ...t });
-        const t = tasksMap[bar.dataset.id];
-        const { start, due, clamped } = clampToProject(newStart, newDue, projectOf(t));
-        t.startDate = start; t.dueDate = due;
-        if (clamped) Utils.toast(`Kept "${t.name}" within its project's start/due dates`, { tone: 'danger' });
-        shiftDependents(t.id, 0, tasksMap, new Set());
-        DataStore.setTasks(Object.values(tasksMap));
+        const dragged = tasksArr.find(x => x.id === bar.dataset.id);
+        const { start, due, clamped } = Scheduling.clampToProject(newStart, newDue, projectOf(dragged));
+        if (clamped) Utils.toast(`Kept "${dragged.name}" within its project's start/due dates`, { tone: 'danger' });
+        // Only this bar's own dates are set here — DataStore.setTasks runs
+        // the full dependency-scheduling engine on every write, so every
+        // downstream successor (direct or chained) shifts automatically.
+        const tasks = tasksArr.map(t => t.id === dragged.id ? { ...t, startDate: start, dueDate: due } : t);
+        DataStore.setTasks(tasks);
         mode = null;
       }
     });

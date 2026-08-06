@@ -26,6 +26,7 @@ const AuditLog = (() => {
     color: 'Color', budget: 'Budget', actualCost: 'Actual cost', tags: 'Tags',
     portfolioId: 'Portfolio', archived: 'Archived', plannedDate: 'Planned date',
     actualDate: 'Actual date', completion: 'Completion %', dependsOn: 'Depends on',
+    dependencies: 'Dependencies',
     assignedTo: 'Assigned to', milestoneId: 'Milestone', projectId: 'Project',
     estimatedHours: 'Estimated hours', actualHours: 'Actual hours', progress: 'Progress %',
     role: 'Role'
@@ -51,6 +52,15 @@ const AuditLog = (() => {
     if (field === 'portfolioId') { const p = DataStore.getPortfolios().find(x => x.id === value); return p ? p.name : value; }
     if (field === 'milestoneId') { const m = DataStore.getMilestones().find(x => x.id === value); return m ? m.name : value; }
     if (field === 'startDate' || field === 'dueDate' || field === 'plannedDate' || field === 'actualDate') return Utils.fmtDate(value);
+    if (field === 'dependencies') {
+      if (!value.length) return '—';
+      const tasks = DataStore.getTasks();
+      return value.map(d => {
+        const pred = tasks.find(x => x.id === d.taskId);
+        const lag = d.lag ? ` ${d.lag > 0 ? '+' : ''}${d.lag}d` : '';
+        return `${pred ? pred.name : d.taskId} (${d.type}${lag})`;
+      }).join(', ');
+    }
     if (Array.isArray(value)) return value.length ? value.join(', ') : '—';
     if (typeof value === 'object') return '(changed)';
     return String(value);

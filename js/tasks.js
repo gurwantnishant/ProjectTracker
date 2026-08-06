@@ -35,11 +35,15 @@ const Tasks = (() => {
   }
 
   function dependencyWarning(t) {
-    if (!t.dependency) return null;
-    const dep = DataStore.getTasks().find(x => x.id === t.dependency.taskId);
-    if (!dep) return null;
-    if (t.dependency.type === 'FS' && dep.status !== 'Completed' && t.status !== 'Not Started') {
-      return `Blocked by "${dep.name}" (must finish first)`;
+    const deps = Scheduling.depsOf(t);
+    if (!deps.length) return null;
+    const tasks = DataStore.getTasks();
+    for (const edge of deps) {
+      const dep = tasks.find(x => x.id === edge.taskId);
+      if (!dep) continue;
+      if (edge.type === 'FS' && dep.status !== 'Completed' && t.status !== 'Not Started') {
+        return `Blocked by "${dep.name}" (must finish first)`;
+      }
     }
     return null;
   }
@@ -404,6 +408,75 @@ const Tasks = (() => {
     ).join('')}`;
   }
 
+  const DEP_TYPE_LABELS = { FS: 'Finish to Start', SS: 'Start to Start', FF: 'Finish to Finish', SF: 'Start to Finish' };
+
+  function depOptionsHtml(availableDeps, selectedId) {
+    return `<option value="">Choose task…</option>${availableDeps.map(d => `<option value="${d.id}" ${selectedId === d.id ? 'selected' : ''}>${Utils.escapeHtml(d.name)}</option>`).join('')}`;
+  }
+
+  function depTypeOptionsHtml(selectedType) {
+    return Scheduling.TYPES.map(x => `<option value="${x}" ${selectedType === x ? 'selected' : ''}>${x} — ${DEP_TYPE_LABELS[x]}</option>`).join('');
+  }
+
+  function depRowHtml(edge, availableDeps) {
+    return `
+      <div class="dep-row" data-id="${edge.id}">
+        <select class="dep-task">${depOptionsHtml(availableDeps, edge.taskId)}</select>
+        <select class="dep-type">${depTypeOptionsHtml(edge.type)}</select>
+        <input type="number" class="dep-lag" value="${edge.lag ?? 0}" title="Lead/lag in days (negative = lead, positive = lag)">
+        <button type="button" class="dep-remove" title="Remove dependency">✕</button>
+      </div>`;
+  }
+
+  function dependenciesFieldHtml(t, availableDeps) {
+    const deps = Scheduling.depsOf(t).map(d => ({ ...d, id: Utils.uid('dep') }));
+    return `
+      <div class="form-field span-2">
+        <label>Dependencies <span class="text-faint" style="font-weight:400;">(predecessor · type · lag/lead in days)</span></label>
+        <div id="depList" class="dep-list">${deps.map(d => depRowHtml(d, availableDeps)).join('')}</div>
+        <button type="button" class="btn-secondary btn-sm" id="addDepBtn" style="margin-top:6px; align-self:flex-start;">+ Add dependency</button>
+      </div>
+    `;
+  }
+
+  // Wires up add/remove for the dependency rows above. Each row is fully
+  // self-contained (predecessor task, FS/SS/FF/SS type, lead/lag days) so a
+  // task can depend on any number of predecessors, each with its own type.
+  function bindDependencyControls(root, task, availableDeps) {
+    const list = root.querySelector('#depList');
+    function bindRow(row) {
+      row.querySelector('.dep-remove').addEventListener('click', () => row.remove());
+    }
+    function addRow(edge) {
+      const row = document.createElement('div');
+      row.className = 'dep-row';
+      row.dataset.id = edge.id;
+      row.innerHTML = `
+        <select class="dep-task">${depOptionsHtml(availableDeps, edge.taskId)}</select>
+        <select class="dep-type">${depTypeOptionsHtml(edge.type)}</select>
+        <input type="number" class="dep-lag" value="${edge.lag ?? 0}" title="Lead/lag in days (negative = lead, positive = lag)">
+        <button type="button" class="dep-remove" title="Remove dependency">✕</button>
+      `;
+      list.appendChild(row);
+      bindRow(row);
+      return row;
+    }
+    list.querySelectorAll('.dep-row').forEach(bindRow);
+    root.querySelector('#addDepBtn').addEventListener('click', () => {
+      addRow({ id: Utils.uid('dep'), taskId: '', type: 'FS', lag: 0 });
+    });
+  }
+
+  function readDependencies(root) {
+    return [...root.querySelectorAll('#depList .dep-row')]
+      .map(row => ({
+        taskId: row.querySelector('.dep-task').value,
+        type: row.querySelector('.dep-type').value,
+        lag: parseInt(row.querySelector('.dep-lag').value, 10) || 0
+      }))
+      .filter(d => d.taskId); // drop rows left on "Choose task…"
+  }
+
   function formHtml(t, projects) {
     const availableDeps = DataStore.getTasks().filter(x => x.id !== t.id && x.projectId === (t.projectId || projects[0]?.id));
     const subtasks = t.subtasks || [];
@@ -424,19 +497,14 @@ const Tasks = (() => {
         <div class="form-field" id="f_progressAutoWrap" style="display:none;"><label>Progress (auto from subtasks)</label><div class="form-field__readonly" id="f_progressAutoValue">0%</div></div>
         <div class="form-field"><label>Estimated Hours</label><input type="number" id="f_est" min="0" value="${t.estimatedHours ?? 0}"></div>
         <div class="form-field"><label>Actual Hours</label><input type="number" id="f_actual" min="0" value="${t.actualHours ?? 0}"></div>
-        <div class="form-field"><label>Depends On</label><select id="f_dep"><option value="">None</option>${availableDeps.map(d => `<option value="${d.id}" ${t.dependency?.taskId === d.id ? 'selected' : ''}>${Utils.escapeHtml(d.name)}</option>`).join('')}</select></div>
-        <div class="form-field"><label>Dependency Type</label>
-          <select id="f_depType">
-            ${['FS', 'SS', 'FF', 'SF'].map(x => `<option value="${x}" ${t.dependency?.type === x ? 'selected' : ''}>${x} — ${{FS:'Finish to Start', SS:'Start to Start', FF:'Finish to Finish', SF:'Start to Finish'}[x]}</option>`).join('')}
-          </select>
-        </div>
+        ${dependenciesFieldHtml(t, availableDeps)}
         ${subtasksFieldHtml(subtasks)}
       </div>
     `;
   }
 
   function readForm(root) {
-    const depId = root.querySelector('#f_dep').value;
+    const dependencies = readDependencies(root);
     const subtasks = readSubtasks(root);
     const manualProgress = Utils.clamp(parseInt(root.querySelector('#f_progress').value) || 0, 0, 100);
     // Mirrors Project Progress logic (see storage.js setTasks): when the task
@@ -466,7 +534,7 @@ const Tasks = (() => {
       subtasks,
       estimatedHours: parseInt(root.querySelector('#f_est').value) || 0,
       actualHours: parseInt(root.querySelector('#f_actual').value) || 0,
-      dependency: depId ? { taskId: depId, type: root.querySelector('#f_depType').value } : null
+      dependencies
     };
   }
 
@@ -482,13 +550,19 @@ const Tasks = (() => {
       onMount: (root, close) => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
         bindSubtaskControls(root);
+        bindDependencyControls(root, draft, DataStore.getTasks().filter(x => x.projectId === draft.projectId));
         root.querySelector('#f_project').addEventListener('change', (e) => { applyDateBounds(root, projectById(e.target.value)); root.querySelector('#f_milestone').innerHTML = milestoneOptionsHtml(e.target.value, ''); });
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveTaskBtn').addEventListener('click', () => {
           const data = readForm(root);
           const err = validateTaskDates(data, projectById(data.projectId));
           if (err) { showDateError(root, err); return; }
-          const task = { id: Utils.uid('task'), ...data, comments: [], createdAt: Date.now() };
+          const newId = Utils.uid('task');
+          if (Scheduling.wouldCreateCycle(DataStore.getTasks(), newId, data.dependencies)) {
+            Utils.toast(Scheduling.CYCLE_MESSAGE, { tone: 'danger' });
+            return;
+          }
+          const task = { id: newId, ...data, comments: [], createdAt: Date.now() };
           DataStore.setTasks([...DataStore.getTasks(), task]);
           Utils.toast(`Created "${task.name}"`);
           close();
@@ -506,12 +580,17 @@ const Tasks = (() => {
       onMount: (root, close) => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
         bindSubtaskControls(root);
+        bindDependencyControls(root, task, DataStore.getTasks().filter(x => x.id !== task.id && x.projectId === task.projectId));
         root.querySelector('#f_project').addEventListener('change', (e) => { applyDateBounds(root, projectById(e.target.value)); root.querySelector('#f_milestone').innerHTML = milestoneOptionsHtml(e.target.value, ''); });
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveTaskBtn').addEventListener('click', () => {
           const data = readForm(root);
           const err = validateTaskDates(data, projectById(data.projectId));
           if (err) { showDateError(root, err); return; }
+          if (Scheduling.wouldCreateCycle(DataStore.getTasks(), task.id, data.dependencies)) {
+            Utils.toast(Scheduling.CYCLE_MESSAGE, { tone: 'danger' });
+            return;
+          }
           const tasks = DataStore.getTasks().map(t => t.id === task.id ? { ...task, ...data } : t);
           DataStore.setTasks(tasks);
           Utils.toast('Task updated');
