@@ -530,6 +530,17 @@ svg.gantt-deps { position: absolute; top: 0; left: 0; pointer-events: none; over
   cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius-sm);
 }
 .subtask-row .subtask-remove:hover { background: var(--coral-soft, rgba(200,57,58,0.1)); color: #C8393A; }
+.dep-list { display: flex; flex-direction: column; gap: 6px; }
+.dep-list:empty::before { content: "No dependencies yet."; color: var(--ink-faint); font-size: 12.5px; }
+.dep-row { display: flex; align-items: center; gap: 8px; }
+.dep-row .dep-task { flex: 2; padding: 7px 10px; font-size: 12.5px; }
+.dep-row .dep-type { flex: 1.4; padding: 7px 10px; font-size: 12.5px; }
+.dep-row .dep-lag { flex: 0 0 64px; padding: 7px 8px; font-size: 12.5px; }
+.dep-row .dep-remove {
+  flex: none; background: transparent; border: none; color: var(--ink-faint);
+  cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius-sm);
+}
+.dep-row .dep-remove:hover { background: var(--coral-soft, rgba(200,57,58,0.1)); color: #C8393A; }
 .form-field__readonly {
   padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);
   background: var(--border-soft); color: var(--ink); font-size: 13px; font-weight: 700;
