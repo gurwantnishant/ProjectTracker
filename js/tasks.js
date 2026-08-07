@@ -267,6 +267,26 @@ const Tasks = (() => {
     if (dueWrap) dueWrap.style.display = isMilestone ? 'none' : '';
   }
 
+  // Live re-check as the user edits Start/Due, so the error clears the
+  // moment the dates make sense again instead of only on Save.
+  function clearDateError(root) {
+    const hint = root.querySelector('#f_dateHint');
+    if (hint) { hint.textContent = ''; hint.classList.remove('form-field__hint--error'); }
+    root.querySelectorAll('#f_start, #f_due').forEach(el => el.classList.remove('is-invalid'));
+  }
+
+  function bindLiveDateValidation(root, getProject) {
+    const check = () => {
+      const start = root.querySelector('#f_start').value;
+      const due = root.querySelector('#f_type').value === 'milestone' ? start : root.querySelector('#f_due').value;
+      const err = validateTaskDates({ startDate: start, dueDate: due }, getProject());
+      if (err) showDateError(root, err); else clearDateError(root);
+    };
+    root.querySelector('#f_start').addEventListener('change', check);
+    root.querySelector('#f_due').addEventListener('change', check);
+    root.querySelector('#f_type').addEventListener('change', check);
+  }
+
   function applyDateBounds(root, project) {
     const startInput = root.querySelector('#f_start');
     const dueInput = root.querySelector('#f_due');
@@ -283,8 +303,17 @@ const Tasks = (() => {
     }
   }
 
-  // Returns null if valid, or { message, fields } describing which inputs are out of range
+  // Returns null if valid, or { message, fields } describing which inputs are out of range.
+  // Order-of-checks: date ordering first (applies to every task, including
+  // milestones defensively — even though the form itself normally forces
+  // milestone dueDate = startDate on save), then the project-window check.
   function validateTaskDates(data, project) {
+    if (data.startDate && data.dueDate && data.dueDate < data.startDate) {
+      return {
+        message: 'Due date cannot be before the start date.',
+        fields: ['#f_start', '#f_due']
+      };
+    }
     if (!project || !project.startDate || !project.dueDate) return null;
     const outStart = data.startDate && (data.startDate < project.startDate || data.startDate > project.dueDate);
     const outDue = data.dueDate && (data.dueDate < project.startDate || data.dueDate > project.dueDate);
@@ -572,6 +601,7 @@ const Tasks = (() => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
         applyTypeUI(root);
         root.querySelector('#f_type').addEventListener('change', () => applyTypeUI(root));
+        bindLiveDateValidation(root, () => projectById(root.querySelector('#f_project').value));
         bindSubtaskControls(root);
         bindDependencyControls(root, draft, DataStore.getTasks().filter(x => x.projectId === draft.projectId));
         root.querySelector('#f_project').addEventListener('change', (e) => { applyDateBounds(root, projectById(e.target.value)); root.querySelector('#f_milestone').innerHTML = milestoneOptionsHtml(e.target.value, ''); });
@@ -604,6 +634,7 @@ const Tasks = (() => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
         applyTypeUI(root);
         root.querySelector('#f_type').addEventListener('change', () => applyTypeUI(root));
+        bindLiveDateValidation(root, () => projectById(root.querySelector('#f_project').value));
         bindSubtaskControls(root);
         bindDependencyControls(root, task, DataStore.getTasks().filter(x => x.id !== task.id && x.projectId === task.projectId));
         root.querySelector('#f_project').addEventListener('change', (e) => { applyDateBounds(root, projectById(e.target.value)); root.querySelector('#f_milestone').innerHTML = milestoneOptionsHtml(e.target.value, ''); });

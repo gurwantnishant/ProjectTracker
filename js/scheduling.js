@@ -126,6 +126,11 @@ const Scheduling = (() => {
       if (start < project.startDate) start = project.startDate;
       clamped = true;
     }
+    // Defensive floor: never return due < start (e.g. a misconfigured
+    // project whose own dueDate is before its startDate). Task/date
+    // ordering is otherwise guaranteed by the Task dialog and Import
+    // validation, but every date math path funnels through here too.
+    if (due < start) { due = start; clamped = true; }
     return { start, due, clamped };
   }
 

@@ -270,7 +270,14 @@ const Importer = (() => {
     milestoneTree.forEach((m, mi) => m.tasks.forEach(t => flatTasks.push({ ...t, milestoneId: newMilestones[mi].id })));
 
     const newTasks = flatTasks.map((t, i) => {
-      const dueDate = t.meta && t.meta.dueDate ? t.meta.dueDate : spreadDate(project.startDate, project.dueDate, i, flatTasks.length);
+      const spread = spreadDate(project.startDate, project.dueDate, i, flatTasks.length);
+      // t.meta.dueDate (when present) comes from free-text parsed out of the
+      // source document/paste, so it isn't guaranteed to be sane — every
+      // imported task's startDate is fixed to project.startDate, so guard
+      // against a parsed dueDate landing before it (same rule as the Task
+      // dialog: due can equal start, just never be earlier).
+      const metaDue = t.meta && t.meta.dueDate;
+      const dueDate = (metaDue && metaDue >= project.startDate) ? metaDue : spread;
       const rawPriority = t.meta && t.meta.priority ? String(t.meta.priority).trim().toLowerCase() : '';
       const matchedPriority = PRIORITIES.find(p => p.toLowerCase() === rawPriority);
       return {
