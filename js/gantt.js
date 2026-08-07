@@ -106,7 +106,10 @@ const Gantt = (() => {
         const durDays = Math.max(1, Utils.daysBetween(t.startDate, t.dueDate));
         const left = offsetDays * pxPerDay();
         const width = durDays * pxPerDay();
-        const isMilestone = t.startDate === t.dueDate;
+        // Bar vs. diamond is decided ONLY by the explicit task.type field —
+        // never by duration/date-equality. A 1-day task (startDate ===
+        // dueDate) is still `type: "task"` and must render as a bar.
+        const isMilestone = t.type === 'milestone';
         rowsHtml += `<div class="gantt-row">
           <div class="gantt-label-col"><span class="badge ${t.status === 'Completed' ? 'badge--status-completed' : 'badge--status-inprogress'}" style="font-size:9.5px; padding:1px 6px;">${t.progress}%</span> ${Utils.escapeHtml(t.name)}</div>
           <div class="gantt-track">

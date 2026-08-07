@@ -257,6 +257,16 @@ const Tasks = (() => {
   function projectById(id) { return DataStore.getProjects().find(p => p.id === id); }
   function dateWindowLabel(project) { return `${Utils.fmtDate(project.startDate)} – ${Utils.fmtDate(project.dueDate)}`; }
 
+  // Pure UI convenience: when Type = Milestone, hide the separate Due Date
+  // field (a milestone is a single point in time = Start Date) and show it
+  // again for Type = Task. This never affects how bar-vs-diamond rendering
+  // is decided — that's driven solely by the saved `type` field.
+  function applyTypeUI(root) {
+    const isMilestone = root.querySelector('#f_type').value === 'milestone';
+    const dueWrap = root.querySelector('#f_dueWrap');
+    if (dueWrap) dueWrap.style.display = isMilestone ? 'none' : '';
+  }
+
   function applyDateBounds(root, project) {
     const startInput = root.querySelector('#f_start');
     const dueInput = root.querySelector('#f_due');
@@ -488,8 +498,9 @@ const Tasks = (() => {
         <div class="form-field"><label>Project</label><select id="f_project">${projects.map(p => `<option value="${p.id}" ${t.projectId === p.id ? 'selected' : ''}>${Utils.escapeHtml(p.name)}</option>`).join('')}</select></div>
         <div class="form-field"><label>Milestone (optional)</label><select id="f_milestone">${milestoneOptionsHtml(initialProjectId, t.milestoneId || '')}</select></div>
         <div class="form-field"><label>Assigned To</label><select id="f_assignee">${Utils.memberOptionsHtml(t.assignedTo || '')}</select></div>
+        <div class="form-field"><label>Type</label><select id="f_type"><option value="task" ${(t.type || 'task') === 'task' ? 'selected' : ''}>Task</option><option value="milestone" ${t.type === 'milestone' ? 'selected' : ''}>Milestone</option></select></div>
         <div class="form-field"><label>Start Date</label><input type="date" id="f_start" value="${t.startDate || Utils.todayISO()}"></div>
-        <div class="form-field"><label>Due Date</label><input type="date" id="f_due" value="${t.dueDate || Utils.todayISO()}"></div>
+        <div class="form-field" id="f_dueWrap"><label>Due Date</label><input type="date" id="f_due" value="${t.dueDate || Utils.todayISO()}"></div>
         <div class="form-field span-2"><div class="form-field__hint" id="f_dateHint"></div></div>
         <div class="form-field"><label>Priority</label><select id="f_priority">${PRIORITIES.map(x => `<option ${t.priority === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
         <div class="form-field"><label>Status <span class="text-faint" id="f_statusHint" style="font-weight:400; font-size:11px;"></span></label><select id="f_status">${STATUSES.map(x => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
@@ -520,14 +531,24 @@ const Tasks = (() => {
     if (subtasks.length) {
       status = subtasks.every(s => s.completed) ? 'Completed' : (status === 'Completed' ? 'In Progress' : status);
     }
+    // Task Type is the ONLY thing that decides bar-vs-diamond rendering
+    // (see Gantt.render / Scheduling.isMilestone) — it is never inferred
+    // from startDate/dueDate. For milestones we still collapse dueDate to
+    // startDate here purely as a data-consistency convenience (a milestone
+    // is a zero-length point in time); a "task" keeps whatever date range
+    // the user entered, no matter how short (a 1-day task stays a bar).
+    const type = root.querySelector('#f_type').value === 'milestone' ? 'milestone' : 'task';
+    const startDate = root.querySelector('#f_start').value;
+    const dueDate = type === 'milestone' ? startDate : root.querySelector('#f_due').value;
     return {
       name: root.querySelector('#f_name').value.trim() || 'Untitled Task',
       description: root.querySelector('#f_desc').value.trim(),
       projectId: root.querySelector('#f_project').value,
       milestoneId: root.querySelector('#f_milestone').value || null,
       assignedTo: root.querySelector('#f_assignee').value,
-      startDate: root.querySelector('#f_start').value,
-      dueDate: root.querySelector('#f_due').value,
+      type,
+      startDate,
+      dueDate,
       priority: root.querySelector('#f_priority').value,
       status,
       progress,
@@ -549,6 +570,8 @@ const Tasks = (() => {
       footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveTaskBtn">Create Task</button>`,
       onMount: (root, close) => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
+        applyTypeUI(root);
+        root.querySelector('#f_type').addEventListener('change', () => applyTypeUI(root));
         bindSubtaskControls(root);
         bindDependencyControls(root, draft, DataStore.getTasks().filter(x => x.projectId === draft.projectId));
         root.querySelector('#f_project').addEventListener('change', (e) => { applyDateBounds(root, projectById(e.target.value)); root.querySelector('#f_milestone').innerHTML = milestoneOptionsHtml(e.target.value, ''); });
@@ -579,6 +602,8 @@ const Tasks = (() => {
       footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveTaskBtn">Save Changes</button>`,
       onMount: (root, close) => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
+        applyTypeUI(root);
+        root.querySelector('#f_type').addEventListener('change', () => applyTypeUI(root));
         bindSubtaskControls(root);
         bindDependencyControls(root, task, DataStore.getTasks().filter(x => x.id !== task.id && x.projectId === task.projectId));
         root.querySelector('#f_project').addEventListener('change', (e) => { applyDateBounds(root, projectById(e.target.value)); root.querySelector('#f_milestone').innerHTML = milestoneOptionsHtml(e.target.value, ''); });

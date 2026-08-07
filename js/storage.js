@@ -84,6 +84,17 @@ const DataStore = (() => {
     localStorage.setItem(key, JSON.stringify(value));
   }
 
+  // Backward-compat migration for data saved before task.type existed.
+  // Old data has no `type` field at all, so bar-vs-diamond rendering used
+  // to be (incorrectly) inferred from startDate === dueDate. None of that
+  // old data ever recorded real milestone intent anywhere, so the only
+  // safe, non-destructive default is 'task' for everything — a true
+  // milestone can be re-marked as such from the Task dialog. This never
+  // mutates the stored objects in place; it returns new objects.
+  function normalizeTasks(items) {
+    return (items || []).map(t => (t.type === 'task' || t.type === 'milestone') ? t : { ...t, type: 'task' });
+  }
+
   async function loadAll() {
     if (mode === 'firestore') {
       const [pSnap, tSnap, pfSnap, mSnap, memSnap, auditSnap] = await Promise.all([
@@ -108,6 +119,7 @@ const DataStore = (() => {
       cache.members = localGet(LOCAL_KEYS.members, []);
       cache.auditLog = localGet(LOCAL_KEYS.auditLog, []);
     }
+    cache.tasks = normalizeTasks(cache.tasks);
   }
 
   async function persist(kind) {
@@ -153,6 +165,7 @@ const DataStore = (() => {
       // reflect their predecessors with no manual "refresh" step anywhere in
       // the app — Gantt drag, the Task dialog, bulk import, and undo all
       // funnel through this one place. See scheduling.js for the algorithm.
+      items = normalizeTasks(items);
       let clampedNames = [];
       if (typeof Scheduling !== 'undefined') {
         const result = Scheduling.recalcAll(items);

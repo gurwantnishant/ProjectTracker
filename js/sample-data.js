@@ -128,6 +128,7 @@ const SampleData = (() => {
           name,
           description: `${name} for the ${proj.name} initiative.`,
           assignedTo: pick(OWNERS),
+          type: 'task',
           startDate: start,
           dueDate: due,
           priority: pick(priorities),

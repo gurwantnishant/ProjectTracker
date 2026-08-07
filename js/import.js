@@ -280,6 +280,10 @@ const Importer = (() => {
         projectId: project.id,
         milestoneId: t.milestoneId,
         assignedTo: (t.meta && t.meta.assignee) || project.owner,
+        // Imported tasks are always real tasks, never milestones — even
+        // though spreadDate() can legitimately land dueDate === startDate
+        // for early items (e.g. i=0), which must still render as a bar.
+        type: 'task',
         startDate: project.startDate,
         dueDate,
         priority: matchedPriority || 'Medium',

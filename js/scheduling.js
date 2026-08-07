@@ -70,7 +70,11 @@ const Scheduling = (() => {
     return [];
   }
 
-  function isMilestone(t) { return t.startDate === t.dueDate; }
+  // A task is a milestone if and only if it is explicitly typed as one.
+  // This must NEVER be inferred from startDate/dueDate/duration: a 1-day
+  // task legitimately has startDate === dueDate and must stay a normal
+  // (zero-length-bar) task, not be reclassified as a milestone.
+  function isMilestone(t) { return t.type === 'milestone'; }
 
   // ---- circular dependency detection --------------------------------
   // Classic 3-color DFS (white/gray/black) over the "depends on" graph.
