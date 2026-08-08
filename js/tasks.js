@@ -275,8 +275,27 @@ const Tasks = (() => {
     root.querySelectorAll('#f_start, #f_due').forEach(el => el.classList.remove('is-invalid'));
   }
 
+  function wireAutoDateToggle(root) {
+    const auto = root.querySelector('#f_auto');
+    const start = root.querySelector('#f_start');
+    const due = root.querySelector('#f_due');
+    auto.addEventListener('change', () => {
+      start.disabled = auto.checked;
+      due.disabled = auto.checked;
+      if (auto.checked) {
+        start.value = '';
+        due.value = '';
+        clearDateError(root);
+      } else {
+        if (!start.value) start.value = Utils.todayISO();
+        if (!due.value) due.value = Utils.todayISO();
+      }
+    });
+  }
+
   function bindLiveDateValidation(root, getProject) {
     const check = () => {
+      if (root.querySelector('#f_auto').checked) { clearDateError(root); return; }
       const start = root.querySelector('#f_start').value;
       const due = root.querySelector('#f_type').value === 'milestone' ? start : root.querySelector('#f_due').value;
       const err = validateTaskDates({ startDate: start, dueDate: due }, getProject());
@@ -285,6 +304,7 @@ const Tasks = (() => {
     root.querySelector('#f_start').addEventListener('change', check);
     root.querySelector('#f_due').addEventListener('change', check);
     root.querySelector('#f_type').addEventListener('change', check);
+    root.querySelector('#f_auto').addEventListener('change', check);
   }
 
   function applyDateBounds(root, project) {
@@ -528,8 +548,14 @@ const Tasks = (() => {
         <div class="form-field"><label>Milestone (optional)</label><select id="f_milestone">${milestoneOptionsHtml(initialProjectId, t.milestoneId || '')}</select></div>
         <div class="form-field"><label>Assigned To</label><select id="f_assignee">${Utils.memberOptionsHtml(t.assignedTo || '')}</select></div>
         <div class="form-field"><label>Type</label><select id="f_type"><option value="task" ${(t.type || 'task') === 'task' ? 'selected' : ''}>Task</option><option value="milestone" ${t.type === 'milestone' ? 'selected' : ''}>Milestone</option></select></div>
-        <div class="form-field"><label>Start Date</label><input type="date" id="f_start" value="${t.startDate || Utils.todayISO()}"></div>
-        <div class="form-field" id="f_dueWrap"><label>Due Date</label><input type="date" id="f_due" value="${t.dueDate || Utils.todayISO()}"></div>
+        <div class="form-field span-2">
+          <label class="flex gap-8" style="cursor:pointer; font-weight:normal;">
+            <input type="checkbox" id="f_auto" ${t.datesAuto === true ? 'checked' : ''}> Auto-distribute dates within the milestone/project timeline
+          </label>
+          <div class="form-field__hint">Spreads this task's dates evenly across its milestone (or the project, if it has no milestone), alongside its other auto-distributed tasks. Turn off to set exact dates.</div>
+        </div>
+        <div class="form-field"><label>Start Date</label><input type="date" id="f_start" value="${t.startDate || ''}" ${t.datesAuto === true ? 'disabled' : ''}></div>
+        <div class="form-field" id="f_dueWrap"><label>Due Date</label><input type="date" id="f_due" value="${t.dueDate || ''}" ${t.datesAuto === true ? 'disabled' : ''}></div>
         <div class="form-field span-2"><div class="form-field__hint" id="f_dateHint"></div></div>
         <div class="form-field"><label>Priority</label><select id="f_priority">${PRIORITIES.map(x => `<option ${t.priority === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
         <div class="form-field"><label>Status <span class="text-faint" id="f_statusHint" style="font-weight:400; font-size:11px;"></span></label><select id="f_status">${STATUSES.map(x => `<option ${t.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
@@ -567,8 +593,12 @@ const Tasks = (() => {
     // is a zero-length point in time); a "task" keeps whatever date range
     // the user entered, no matter how short (a 1-day task stays a bar).
     const type = root.querySelector('#f_type').value === 'milestone' ? 'milestone' : 'task';
-    const startDate = root.querySelector('#f_start').value;
-    const dueDate = type === 'milestone' ? startDate : root.querySelector('#f_due').value;
+    const datesAuto = root.querySelector('#f_auto').checked;
+    // While auto, dates are left blank here — TopDown (see topdown.js,
+    // wired into DataStore.setTasks) fills them in against the milestone's
+    // or project's date range right after this record is saved.
+    const startDate = datesAuto ? null : root.querySelector('#f_start').value;
+    const dueDate = datesAuto ? null : (type === 'milestone' ? startDate : root.querySelector('#f_due').value);
     return {
       name: root.querySelector('#f_name').value.trim() || 'Untitled Task',
       description: root.querySelector('#f_desc').value.trim(),
@@ -576,6 +606,7 @@ const Tasks = (() => {
       milestoneId: root.querySelector('#f_milestone').value || null,
       assignedTo: root.querySelector('#f_assignee').value,
       type,
+      datesAuto,
       startDate,
       dueDate,
       priority: root.querySelector('#f_priority').value,
@@ -591,7 +622,7 @@ const Tasks = (() => {
   function openCreateModal() {
     const projects = DataStore.getProjects();
     if (!projects.length) { Utils.toast('Create a project first'); return; }
-    const draft = { status: 'Not Started', priority: 'Medium', projectId: filters.project || projects[0].id };
+    const draft = { status: 'Not Started', priority: 'Medium', projectId: filters.project || projects[0].id, datesAuto: true };
     App.navigate('tasks');
     Utils.openModal({
       title: 'New Task', wide: true,
@@ -600,6 +631,7 @@ const Tasks = (() => {
       onMount: (root, close) => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
         applyTypeUI(root);
+        wireAutoDateToggle(root);
         root.querySelector('#f_type').addEventListener('change', () => applyTypeUI(root));
         bindLiveDateValidation(root, () => projectById(root.querySelector('#f_project').value));
         bindSubtaskControls(root);
@@ -608,7 +640,7 @@ const Tasks = (() => {
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveTaskBtn').addEventListener('click', () => {
           const data = readForm(root);
-          const err = validateTaskDates(data, projectById(data.projectId));
+          const err = data.datesAuto ? null : validateTaskDates(data, projectById(data.projectId));
           if (err) { showDateError(root, err); return; }
           const newId = Utils.uid('task');
           if (Scheduling.wouldCreateCycle(DataStore.getTasks(), newId, data.dependencies)) {
@@ -633,6 +665,7 @@ const Tasks = (() => {
       onMount: (root, close) => {
         applyDateBounds(root, projectById(root.querySelector('#f_project').value));
         applyTypeUI(root);
+        wireAutoDateToggle(root);
         root.querySelector('#f_type').addEventListener('change', () => applyTypeUI(root));
         bindLiveDateValidation(root, () => projectById(root.querySelector('#f_project').value));
         bindSubtaskControls(root);
@@ -641,7 +674,7 @@ const Tasks = (() => {
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveTaskBtn').addEventListener('click', () => {
           const data = readForm(root);
-          const err = validateTaskDates(data, projectById(data.projectId));
+          const err = data.datesAuto ? null : validateTaskDates(data, projectById(data.projectId));
           if (err) { showDateError(root, err); return; }
           if (Scheduling.wouldCreateCycle(DataStore.getTasks(), task.id, data.dependencies)) {
             Utils.toast(Scheduling.CYCLE_MESSAGE, { tone: 'danger' });

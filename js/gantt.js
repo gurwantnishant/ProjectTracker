@@ -39,7 +39,7 @@ const Gantt = (() => {
       let cursor = range.start;
       while (cursor <= range.end) {
         const next = Utils.addDays(cursor, 7);
-        ticks.push({ label: Utils.fmtDate(cursor).replace(/, \d{4}/, ''), start: cursor, days: 7 });
+        ticks.push({ label: Utils.fmtDate(cursor).replace(/ \d{2}$/, ''), start: cursor, days: 7 });
         cursor = next;
       }
     }
@@ -225,7 +225,10 @@ const Gantt = (() => {
         // Only this bar's own dates are set here — DataStore.setTasks runs
         // the full dependency-scheduling engine on every write, so every
         // downstream successor (direct or chained) shifts automatically.
-        const tasks = tasksArr.map(t => t.id === dragged.id ? { ...t, startDate: start, dueDate: due } : t);
+        // A manual drag always turns off auto-distribution for this task,
+        // otherwise the top-down engine would immediately overwrite the
+        // dragged position back to its computed slice.
+        const tasks = tasksArr.map(t => t.id === dragged.id ? { ...t, startDate: start, dueDate: due, datesAuto: false } : t);
         DataStore.setTasks(tasks);
         mode = null;
       }

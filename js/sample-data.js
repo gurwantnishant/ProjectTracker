@@ -138,6 +138,7 @@ const SampleData = (() => {
           estimatedHours: estHours,
           actualHours: status === 'Not Started' ? 0 : Math.floor(estHours * (0.4 + Math.random() * 0.9)),
           comments: [],
+          datesAuto: false,
           createdAt: Date.now() - (names.length - idx) * 3600000
         };
         tasks.push(task);
@@ -164,6 +165,8 @@ const SampleData = (() => {
       names.forEach((name, idx) => {
         const fraction = (idx + 1) / (names.length + 1);
         const planned = Utils.addDays(proj.startDate, Math.round(span * fraction));
+        const startFraction = idx / (names.length + 1);
+        const msStart = Utils.addDays(proj.startDate, Math.round(span * startFraction));
         const today2 = Utils.todayISO();
         let status = planned < today2 ? pick(['Completed', 'Completed', 'At Risk']) : pick(['Not Started', 'In Progress']);
         const completion = status === 'Completed' ? 100 : status === 'In Progress' ? 40 + Math.floor(Math.random() * 40) : 0;
@@ -173,11 +176,13 @@ const SampleData = (() => {
           name,
           description: `${name} for ${proj.name}.`,
           owner: pick(OWNERS),
+          startDate: msStart,
           plannedDate: planned,
           actualDate: status === 'Completed' ? planned : null,
           status,
           completion,
           dependsOn: prevId,
+          datesAuto: false,
           createdAt: Date.now() - (names.length - idx) * 3600000
         };
         milestones.push(m);

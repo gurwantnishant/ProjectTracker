@@ -125,7 +125,7 @@ const Dashboard = (() => {
       const weekStart = Utils.addDays(weekEnd, -6);
       const inWeek = tasks.filter(t => t.dueDate >= weekStart && t.dueDate <= weekEnd);
       const completed = inWeek.filter(t => t.status === 'Completed').length;
-      const label = new Date(weekEnd + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const label = Utils.fmtDate(weekEnd);
       points.push({ label, value: completed });
     }
     return points;

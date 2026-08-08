@@ -131,6 +131,20 @@ const DataStore = (() => {
     }
   }
 
+  function milestonesDiffer(a, b) {
+    if (a.length !== b.length) return true;
+    const key = m => `${m.id}|${m.startDate || ''}|${m.plannedDate || ''}`;
+    const mapB = new Map(b.map(m => [m.id, key(m)]));
+    return a.some(m => mapB.get(m.id) !== key(m));
+  }
+
+  function tasksDiffer(a, b) {
+    if (a.length !== b.length) return true;
+    const key = t => `${t.id}|${t.startDate || ''}|${t.dueDate || ''}`;
+    const mapB = new Map(b.map(t => [t.id, key(t)]));
+    return a.some(t => mapB.get(t.id) !== key(t));
+  }
+
   let readyResolve;
   const ready = new Promise(res => { readyResolve = res; });
 
@@ -142,6 +156,144 @@ const DataStore = (() => {
   }
 
   init();
+
+
+  // Re-run top-down date distribution (see topdown.js) after anything that
+  // could change a project's or milestone's date range: fills in dates for
+  // every auto milestone/task and reflows them to match the new range.
+  // Manually-dated items (datesAuto:false) are never touched.
+  async function resyncTopDown() {
+    const newMilestones = TopDown.distributeMilestones(cache.milestones, cache.projects);
+    if (milestonesDiffer(newMilestones, cache.milestones)) {
+      cache.milestones = newMilestones;
+      await persist('milestones');
+      notify('milestones');
+    }
+    const newTasks = TopDown.distributeTasks(cache.tasks, cache.milestones, cache.projects);
+    if (tasksDiffer(newTasks, cache.tasks)) {
+      await setTasksImpl(newTasks);
+    }
+  }
+
+  async function setTasksImpl(items) {
+    // Top-down distribution first (fills in dates for any auto task, using
+    // the current milestone/project ranges), then the dependency scheduling
+    // engine, so FS/SS/FF/SF successors always reflect their predecessors
+    // with no manual "refresh" step anywhere in the app — Gantt drag, the
+    // Task dialog, bulk import, top-down reflow, and undo all funnel through
+    // this one place. See topdown.js and scheduling.js for the algorithms.
+    items = normalizeTasks(items);
+    items = TopDown.distributeTasks(items, cache.milestones, cache.projects);
+
+    let clampedNames = [];
+    if (typeof Scheduling !== 'undefined') {
+      const result = Scheduling.recalcAll(items);
+      items = result.tasks;
+      clampedNames = result.clampedNames;
+    }
+
+    // Capture which projects/milestones were touched by the OLD task list
+    // too, so a deleted or reassigned task's old project/milestone still
+    // gets recalculated (its id won't appear in the new `items` list).
+    const touchedProjectIds = new Set([
+      ...cache.tasks.map(t => t.projectId),
+      ...items.map(t => t.projectId)
+    ]);
+    const touchedMilestoneIds = new Set([
+      ...cache.tasks.map(t => t.milestoneId).filter(Boolean),
+      ...items.map(t => t.milestoneId).filter(Boolean)
+    ]);
+
+    cache.tasks = items;
+    await persist('tasks');
+    notify('tasks');
+
+    // Auto-recalculate each affected project's completion % from its tasks:
+    // progress = (completed tasks / total tasks) * 100, rounded. Projects
+    // with no tasks show 0%. This keeps Project Progress always in sync
+    // with task status, with no manual entry needed.
+    let projectsChanged = false;
+    const updatedProjects = cache.projects.map(p => {
+      if (!touchedProjectIds.has(p.id)) return p;
+      const projectTasks = cache.tasks.filter(t => t.projectId === p.id);
+      const newProgress = projectTasks.length
+        ? Math.round((projectTasks.filter(t => t.status === 'Completed').length / projectTasks.length) * 100)
+        : 0;
+      if (newProgress !== p.progress) projectsChanged = true;
+      return { ...p, progress: newProgress };
+    });
+    if (projectsChanged) {
+      cache.projects = updatedProjects;
+      await persist('projects');
+      notify('projects');
+    }
+
+    // Auto-sync each affected milestone with the tasks linked to it
+    // (task.milestoneId). Only milestones that actually have at least one
+    // linked task are touched — milestones with no linked tasks stay
+    // fully manual. completion% always tracks linked-task completion
+    // ratio; status flips to 'Completed' once all linked tasks are done,
+    // and un-completes back to 'In Progress' if a completed task under it
+    // gets reopened later.
+    let milestonesChanged = false;
+    const today = Utils.todayISO();
+    const updatedMilestones = cache.milestones.map(m => {
+      if (!touchedMilestoneIds.has(m.id)) return m;
+      const linkedTasks = cache.tasks.filter(t => t.milestoneId === m.id);
+      if (!linkedTasks.length) return m;
+
+      const doneCount = linkedTasks.filter(t => t.status === 'Completed').length;
+      const newCompletion = Math.round((doneCount / linkedTasks.length) * 100);
+      const allDone = doneCount === linkedTasks.length;
+
+      let newStatus = m.status;
+      let newActualDate = m.actualDate;
+      if (allDone && m.status !== 'Completed') {
+        newStatus = 'Completed';
+        newActualDate = m.actualDate || today;
+      } else if (!allDone && m.status === 'Completed') {
+        // A previously-completed milestone had one of its tasks reopened.
+        newStatus = 'In Progress';
+        newActualDate = null;
+      }
+
+      if (newCompletion !== m.completion || newStatus !== m.status || newActualDate !== m.actualDate) {
+        milestonesChanged = true;
+      }
+      return { ...m, completion: newCompletion, status: newStatus, actualDate: newActualDate };
+    });
+    if (milestonesChanged) {
+      cache.milestones = updatedMilestones;
+      await persist('milestones');
+      notify('milestones');
+    }
+
+    if (clampedNames.length && typeof Utils !== 'undefined') {
+      const names = [...new Set(clampedNames)];
+      const label = names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ');
+      Utils.toast(`Dependency scheduling kept "${label}" within its project's start/due dates`, { tone: 'danger' });
+    }
+  }
+
+  async function setMilestonesImpl(items) {
+    cache.milestones = items;
+    await persist('milestones');
+    notify('milestones');
+
+    // Milestone list changed (added/removed/reordered/edited) — re-run
+    // top-down for milestones (their siblings' auto slices may have shifted)
+    // and then for tasks (milestone ranges may have shifted underneath them).
+    const redistributed = TopDown.distributeMilestones(cache.milestones, cache.projects);
+    if (milestonesDiffer(redistributed, cache.milestones)) {
+      cache.milestones = redistributed;
+      await persist('milestones');
+      notify('milestones');
+    }
+    const newTasks = TopDown.distributeTasks(cache.tasks, cache.milestones, cache.projects);
+    if (tasksDiffer(newTasks, cache.tasks)) {
+      await setTasksImpl(newTasks);
+    }
+  }
 
   return {
     ready,
@@ -158,102 +310,10 @@ const DataStore = (() => {
       cache.projects = items;
       await persist('projects');
       notify('projects');
+      await resyncTopDown();
     },
     async setTasks(items) {
-      // Run the dependency scheduling engine on every task-list write, so
-      // FS/SS/FF/SF successors (and their successors, and theirs...) always
-      // reflect their predecessors with no manual "refresh" step anywhere in
-      // the app — Gantt drag, the Task dialog, bulk import, and undo all
-      // funnel through this one place. See scheduling.js for the algorithm.
-      items = normalizeTasks(items);
-      let clampedNames = [];
-      if (typeof Scheduling !== 'undefined') {
-        const result = Scheduling.recalcAll(items);
-        items = result.tasks;
-        clampedNames = result.clampedNames;
-      }
-
-      // Capture which projects/milestones were touched by the OLD task list
-      // too, so a deleted or reassigned task's old project/milestone still
-      // gets recalculated (its id won't appear in the new `items` list).
-      const touchedProjectIds = new Set([
-        ...cache.tasks.map(t => t.projectId),
-        ...items.map(t => t.projectId)
-      ]);
-      const touchedMilestoneIds = new Set([
-        ...cache.tasks.map(t => t.milestoneId).filter(Boolean),
-        ...items.map(t => t.milestoneId).filter(Boolean)
-      ]);
-
-      cache.tasks = items;
-      await persist('tasks');
-      notify('tasks');
-
-      // Auto-recalculate each affected project's completion % from its tasks:
-      // progress = (completed tasks / total tasks) * 100, rounded. Projects
-      // with no tasks show 0%. This keeps Project Progress always in sync
-      // with task status, with no manual entry needed.
-      let projectsChanged = false;
-      const updatedProjects = cache.projects.map(p => {
-        if (!touchedProjectIds.has(p.id)) return p;
-        const projectTasks = cache.tasks.filter(t => t.projectId === p.id);
-        const newProgress = projectTasks.length
-          ? Math.round((projectTasks.filter(t => t.status === 'Completed').length / projectTasks.length) * 100)
-          : 0;
-        if (newProgress !== p.progress) projectsChanged = true;
-        return { ...p, progress: newProgress };
-      });
-      if (projectsChanged) {
-        cache.projects = updatedProjects;
-        await persist('projects');
-        notify('projects');
-      }
-
-      // Auto-sync each affected milestone with the tasks linked to it
-      // (task.milestoneId). Only milestones that actually have at least one
-      // linked task are touched — milestones with no linked tasks stay
-      // fully manual. completion% always tracks linked-task completion
-      // ratio; status flips to 'Completed' once all linked tasks are done,
-      // and un-completes back to 'In Progress' if a completed task under it
-      // gets reopened later.
-      let milestonesChanged = false;
-      const today = Utils.todayISO();
-      const updatedMilestones = cache.milestones.map(m => {
-        if (!touchedMilestoneIds.has(m.id)) return m;
-        const linkedTasks = cache.tasks.filter(t => t.milestoneId === m.id);
-        if (!linkedTasks.length) return m;
-
-        const doneCount = linkedTasks.filter(t => t.status === 'Completed').length;
-        const newCompletion = Math.round((doneCount / linkedTasks.length) * 100);
-        const allDone = doneCount === linkedTasks.length;
-
-        let newStatus = m.status;
-        let newActualDate = m.actualDate;
-        if (allDone && m.status !== 'Completed') {
-          newStatus = 'Completed';
-          newActualDate = m.actualDate || today;
-        } else if (!allDone && m.status === 'Completed') {
-          // A previously-completed milestone had one of its tasks reopened.
-          newStatus = 'In Progress';
-          newActualDate = null;
-        }
-
-        if (newCompletion !== m.completion || newStatus !== m.status || newActualDate !== m.actualDate) {
-          milestonesChanged = true;
-        }
-        return { ...m, completion: newCompletion, status: newStatus, actualDate: newActualDate };
-      });
-      if (milestonesChanged) {
-        cache.milestones = updatedMilestones;
-        await persist('milestones');
-        notify('milestones');
-      }
-
-      if (clampedNames.length && typeof Utils !== 'undefined') {
-        const names = [...new Set(clampedNames)];
-        const label = names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ');
-        Utils.toast(`Dependency scheduling kept "${label}" within its project's start/due dates`, { tone: 'danger' });
-      }
+      await setTasksImpl(items);
     },
     async setPortfolios(items) {
       cache.portfolios = items;
@@ -261,9 +321,7 @@ const DataStore = (() => {
       notify('portfolios');
     },
     async setMilestones(items) {
-      cache.milestones = items;
-      await persist('milestones');
-      notify('milestones');
+      await setMilestonesImpl(items);
     },
     async setMembers(items) {
       cache.members = items;

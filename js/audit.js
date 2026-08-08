@@ -29,7 +29,7 @@ const AuditLog = (() => {
     dependencies: 'Dependencies',
     assignedTo: 'Assigned to', milestoneId: 'Milestone', projectId: 'Project',
     estimatedHours: 'Estimated hours', actualHours: 'Actual hours', progress: 'Progress %',
-    role: 'Role'
+    role: 'Role', datesAuto: 'Auto-distribute dates'
   };
 
   // Fields that are auto-derived or internal — never worth an audit line on their own.
@@ -49,6 +49,7 @@ const AuditLog = (() => {
   function fmtValue(field, value) {
     if (value === null || value === undefined || value === '') return '—';
     if (field === 'archived') return value ? 'Yes' : 'No';
+    if (field === 'datesAuto') return value ? 'On' : 'Off';
     if (field === 'portfolioId') { const p = DataStore.getPortfolios().find(x => x.id === value); return p ? p.name : value; }
     if (field === 'milestoneId') { const m = DataStore.getMilestones().find(x => x.id === value); return m ? m.name : value; }
     if (field === 'startDate' || field === 'dueDate' || field === 'plannedDate' || field === 'actualDate') return Utils.fmtDate(value);
@@ -166,7 +167,11 @@ const AuditLog = (() => {
 
   function fmtDateTime(ts) {
     const d = new Date(ts);
-    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    const timePart = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return `${mm}${dd} ${yy} ${timePart}`;
   }
 
   function actionBadge(action) {

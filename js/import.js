@@ -224,13 +224,6 @@ const Importer = (() => {
     return milestones.filter(m => m.tasks.length || m.name !== 'General');
   }
 
-  function spreadDate(startISO, dueISO, index, total) {
-    if (!startISO || !dueISO) return dueISO || startISO || Utils.todayISO();
-    const totalDays = Math.max(0, Utils.daysBetween(startISO, dueISO));
-    const fraction = total > 1 ? index / (total - 1) : (total === 1 ? 1 : 0);
-    return Utils.addDays(startISO, Math.round(totalDays * fraction));
-  }
-
   async function createProjectFromTree(projectFields, milestoneTree) {
     const project = {
       id: Utils.uid('proj'),
@@ -252,6 +245,10 @@ const Importer = (() => {
       createdAt: Date.now()
     };
 
+    // Milestones/tasks are created with no explicit dates and datesAuto:true,
+    // so DataStore's top-down distribution (see topdown.js) spreads them
+    // across the project's — and then each milestone's — date range as soon
+    // as this record is saved, instead of pre-computing dates here.
     const newMilestones = milestoneTree.map((m, i) => ({
       id: Utils.uid('mile'),
       projectId: project.id,
@@ -259,25 +256,25 @@ const Importer = (() => {
       description: '',
       owner: project.owner,
       status: 'Not Started',
-      plannedDate: spreadDate(project.startDate, project.dueDate, i, milestoneTree.length),
+      startDate: null,
+      plannedDate: null,
       actualDate: null,
       completion: 0,
       dependsOn: null,
-      createdAt: Date.now()
+      datesAuto: true,
+      createdAt: Date.now() + i
     }));
 
     const flatTasks = [];
     milestoneTree.forEach((m, mi) => m.tasks.forEach(t => flatTasks.push({ ...t, milestoneId: newMilestones[mi].id })));
 
     const newTasks = flatTasks.map((t, i) => {
-      const spread = spreadDate(project.startDate, project.dueDate, i, flatTasks.length);
       // t.meta.dueDate (when present) comes from free-text parsed out of the
-      // source document/paste, so it isn't guaranteed to be sane — every
-      // imported task's startDate is fixed to project.startDate, so guard
-      // against a parsed dueDate landing before it (same rule as the Task
-      // dialog: due can equal start, just never be earlier).
+      // source document/paste, so it isn't guaranteed to be sane — guard
+      // against a parsed dueDate landing before the project start (same rule
+      // as the Task dialog: due can equal start, just never be earlier).
       const metaDue = t.meta && t.meta.dueDate;
-      const dueDate = (metaDue && metaDue >= project.startDate) ? metaDue : spread;
+      const hasValidMetaDue = metaDue && metaDue >= project.startDate;
       const rawPriority = t.meta && t.meta.priority ? String(t.meta.priority).trim().toLowerCase() : '';
       const matchedPriority = PRIORITIES.find(p => p.toLowerCase() === rawPriority);
       return {
@@ -287,12 +284,10 @@ const Importer = (() => {
         projectId: project.id,
         milestoneId: t.milestoneId,
         assignedTo: (t.meta && t.meta.assignee) || project.owner,
-        // Imported tasks are always real tasks, never milestones — even
-        // though spreadDate() can legitimately land dueDate === startDate
-        // for early items (e.g. i=0), which must still render as a bar.
         type: 'task',
-        startDate: project.startDate,
-        dueDate,
+        startDate: hasValidMetaDue ? project.startDate : null,
+        dueDate: hasValidMetaDue ? metaDue : null,
+        datesAuto: !hasValidMetaDue,
         priority: matchedPriority || 'Medium',
         status: 'Not Started',
         progress: 0,

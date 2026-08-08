@@ -19,11 +19,15 @@ const Utils = (() => {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   }
 
+  // Format: MMDD YY (e.g. 0803 26 for August 3, 2026)
   function fmtDate(iso) {
     if (!iso) return '—';
     const d = new Date(iso + 'T00:00:00');
     if (isNaN(d)) return '—';
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    return `${mm}${dd} ${yy}`;
   }
 
   function daysBetween(a, b) {

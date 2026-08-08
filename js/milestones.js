@@ -75,27 +75,60 @@ const Milestones = (() => {
   // ---------------- form ----------------
   function formHtml(m, projectId) {
     const siblings = DataStore.getMilestones().filter(x => x.projectId === projectId && x.id !== m.id);
+    const isAuto = m.datesAuto === true;
     return `
       <div class="form-grid">
         <div class="form-field span-2"><label>Milestone Name</label><input type="text" id="mf_name" value="${Utils.escapeHtml(m.name || '')}" placeholder="e.g. UAT Sign-off"></div>
         <div class="form-field span-2"><label>Description</label><textarea id="mf_desc" placeholder="What does this milestone represent?">${Utils.escapeHtml(m.description || '')}</textarea></div>
         <div class="form-field"><label>Owner</label><select id="mf_owner">${Utils.managerOptionsHtml(m.owner || '')}</select></div>
         <div class="form-field"><label>Status</label><select id="mf_status">${STATUSES.map(s => `<option ${m.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
-        <div class="form-field"><label>Planned Date</label><input type="date" id="mf_planned" value="${m.plannedDate || Utils.todayISO()}"></div>
+        <div class="form-field span-2">
+          <label class="flex gap-8" style="cursor:pointer; font-weight:normal;">
+            <input type="checkbox" id="mf_auto" ${isAuto ? 'checked' : ''}> Auto-distribute dates within the project's timeline
+          </label>
+          <div class="form-field__hint">Spreads this milestone's Start/Planned dates evenly across the project's date range, alongside its other auto-distributed milestones. Turn off to set exact dates.</div>
+        </div>
+        <div class="form-field"><label>Start Date</label><input type="date" id="mf_start" value="${m.startDate || ''}" ${isAuto ? 'disabled' : ''}></div>
+        <div class="form-field"><label>Planned Date</label><input type="date" id="mf_planned" value="${m.plannedDate || ''}" ${isAuto ? 'disabled' : ''}></div>
         <div class="form-field"><label>Actual Date</label><input type="date" id="mf_actual" value="${m.actualDate || ''}"></div>
         <div class="form-field"><label>Completion (%)</label><input type="number" id="mf_completion" min="0" max="100" value="${m.completion ?? 0}"></div>
-        <div class="form-field"><label>Depends On</label><select id="mf_dependsOn"><option value="">None</option>${siblings.map(s => `<option value="${s.id}" ${m.dependsOn === s.id ? 'selected' : ''}>${Utils.escapeHtml(s.name)}</option>`).join('')}</select></div>
+        <div class="form-field span-2"><label>Depends On</label><select id="mf_dependsOn"><option value="">None</option>${siblings.map(s => `<option value="${s.id}" ${m.dependsOn === s.id ? 'selected' : ''}>${Utils.escapeHtml(s.name)}</option>`).join('')}</select></div>
       </div>
     `;
   }
 
+  function wireAutoToggle(root) {
+    const auto = root.querySelector('#mf_auto');
+    const start = root.querySelector('#mf_start');
+    const planned = root.querySelector('#mf_planned');
+    auto.addEventListener('change', () => {
+      start.disabled = auto.checked;
+      planned.disabled = auto.checked;
+      if (auto.checked) {
+        start.value = '';
+        planned.value = '';
+      } else {
+        if (!start.value) start.value = Utils.todayISO();
+        if (!planned.value) planned.value = Utils.todayISO();
+      }
+    });
+  }
+
   function readForm(root) {
+    const isAuto = root.querySelector('#mf_auto').checked;
+    const startVal = root.querySelector('#mf_start').value;
+    const plannedVal = root.querySelector('#mf_planned').value;
     return {
       name: root.querySelector('#mf_name').value.trim() || 'Untitled Milestone',
       description: root.querySelector('#mf_desc').value.trim(),
       owner: root.querySelector('#mf_owner').value,
       status: root.querySelector('#mf_status').value,
-      plannedDate: root.querySelector('#mf_planned').value || Utils.todayISO(),
+      datesAuto: isAuto,
+      // While auto, dates are left blank here — TopDown (see topdown.js,
+      // wired into DataStore.setMilestones) fills them in against the
+      // project's date range right after this record is saved.
+      startDate: isAuto ? null : (startVal || plannedVal || Utils.todayISO()),
+      plannedDate: isAuto ? null : (plannedVal || startVal || Utils.todayISO()),
       actualDate: root.querySelector('#mf_actual').value || null,
       completion: Utils.clamp(parseInt(root.querySelector('#mf_completion').value) || 0, 0, 100),
       dependsOn: root.querySelector('#mf_dependsOn').value || null
@@ -108,12 +141,13 @@ const Milestones = (() => {
   }
 
   function openCreateModal(projectId) {
-    const draft = { status: 'Not Started', completion: 0 };
+    const draft = { status: 'Not Started', completion: 0, datesAuto: true };
     Utils.openModal({
       title: 'New Milestone',
       bodyHtml: formHtml(draft, projectId),
       footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" id="saveMilestoneBtn">Create Milestone</button>`,
       onMount: (root, close) => {
+        wireAutoToggle(root);
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#saveMilestoneBtn').addEventListener('click', () => {
           const data = readForm(root);
@@ -133,6 +167,7 @@ const Milestones = (() => {
       bodyHtml: formHtml(m, m.projectId),
       footerHtml: `<button class="btn-secondary" data-close>Cancel</button><button class="btn-danger" id="delMilestoneBtn">Delete</button><button class="btn-primary" id="saveMilestoneBtn">Save Changes</button>`,
       onMount: (root, close) => {
+        wireAutoToggle(root);
         root.querySelector('[data-close]').addEventListener('click', close);
         root.querySelector('#delMilestoneBtn').addEventListener('click', () => {
           close();
