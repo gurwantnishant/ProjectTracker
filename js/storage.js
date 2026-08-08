@@ -151,6 +151,7 @@ const DataStore = (() => {
   async function init() {
     await tryInitFirestore();
     await loadAll();
+    await fullResync();
     readyResolve(mode);
     notify('init');
   }
@@ -208,37 +209,52 @@ const DataStore = (() => {
     await persist('tasks');
     notify('tasks');
 
-    // Auto-recalculate each affected project's completion % from its tasks:
-    // progress = (completed tasks / total tasks) * 100, rounded. Projects
-    // with no tasks show 0%. This keeps Project Progress always in sync
-    // with task status, with no manual entry needed.
-    let projectsChanged = false;
-    const updatedProjects = cache.projects.map(p => {
-      if (!touchedProjectIds.has(p.id)) return p;
+    await syncProjectProgress(touchedProjectIds);
+    await syncMilestonesFromTasks(touchedMilestoneIds);
+
+    if (clampedNames.length && typeof Utils !== 'undefined') {
+      const names = [...new Set(clampedNames)];
+      const label = names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ');
+      Utils.toast(`Dependency scheduling kept "${label}" within its project's start/due dates`, { tone: 'danger' });
+    }
+  }
+
+  // Auto-recalculate each given project's completion % from its tasks:
+  // progress = (completed tasks / total tasks) * 100, rounded. Projects
+  // with no tasks show 0%. This keeps Project Progress always in sync
+  // with task status, with no manual entry needed.
+  async function syncProjectProgress(projectIds) {
+    let changed = false;
+    const updated = cache.projects.map(p => {
+      if (!projectIds.has(p.id)) return p;
       const projectTasks = cache.tasks.filter(t => t.projectId === p.id);
       const newProgress = projectTasks.length
         ? Math.round((projectTasks.filter(t => t.status === 'Completed').length / projectTasks.length) * 100)
         : 0;
-      if (newProgress !== p.progress) projectsChanged = true;
+      if (newProgress !== p.progress) changed = true;
       return { ...p, progress: newProgress };
     });
-    if (projectsChanged) {
-      cache.projects = updatedProjects;
+    if (changed) {
+      cache.projects = updated;
       await persist('projects');
       notify('projects');
     }
+  }
 
-    // Auto-sync each affected milestone with the tasks linked to it
-    // (task.milestoneId). Only milestones that actually have at least one
-    // linked task are touched — milestones with no linked tasks stay
-    // fully manual. completion% always tracks linked-task completion
-    // ratio; status flips to 'Completed' once all linked tasks are done,
-    // and un-completes back to 'In Progress' if a completed task under it
-    // gets reopened later.
-    let milestonesChanged = false;
+  // Auto-sync each given milestone with the tasks linked to it
+  // (task.milestoneId). Only milestones that actually have at least one
+  // linked task are touched — milestones with no linked tasks stay fully
+  // manual. completion% always tracks linked-task completion ratio; status
+  // moves to 'In Progress' once at least one linked task is done (but not
+  // all), flips to 'Completed' once all linked tasks are done, and
+  // un-completes back to 'In Progress' if a completed task under it gets
+  // reopened later. Never overrides a status set to something else
+  // manually (e.g. 'At Risk').
+  async function syncMilestonesFromTasks(milestoneIds) {
+    let changed = false;
     const today = Utils.todayISO();
-    const updatedMilestones = cache.milestones.map(m => {
-      if (!touchedMilestoneIds.has(m.id)) return m;
+    const updated = cache.milestones.map(m => {
+      if (!milestoneIds.has(m.id)) return m;
       const linkedTasks = cache.tasks.filter(t => t.milestoneId === m.id);
       if (!linkedTasks.length) return m;
 
@@ -252,27 +268,33 @@ const DataStore = (() => {
         newStatus = 'Completed';
         newActualDate = m.actualDate || today;
       } else if (!allDone && m.status === 'Completed') {
-        // A previously-completed milestone had one of its tasks reopened.
         newStatus = 'In Progress';
         newActualDate = null;
+      } else if (!allDone && doneCount > 0 && m.status === 'Not Started') {
+        newStatus = 'In Progress';
       }
 
       if (newCompletion !== m.completion || newStatus !== m.status || newActualDate !== m.actualDate) {
-        milestonesChanged = true;
+        changed = true;
       }
       return { ...m, completion: newCompletion, status: newStatus, actualDate: newActualDate };
     });
-    if (milestonesChanged) {
-      cache.milestones = updatedMilestones;
+    if (changed) {
+      cache.milestones = updated;
       await persist('milestones');
       notify('milestones');
     }
+  }
 
-    if (clampedNames.length && typeof Utils !== 'undefined') {
-      const names = [...new Set(clampedNames)];
-      const label = names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ');
-      Utils.toast(`Dependency scheduling kept "${label}" within its project's start/due dates`, { tone: 'danger' });
-    }
+  // Runs once right after data loads (see init() below), so any milestone
+  // status/completion, project progress, or top-down date that went stale
+  // in storage — e.g. inherited from before this sync logic existed, or
+  // from a previous session — self-heals on refresh instead of silently
+  // waiting for the next edit to that specific record.
+  async function fullResync() {
+    await resyncTopDown();
+    await syncProjectProgress(new Set(cache.projects.map(p => p.id)));
+    await syncMilestonesFromTasks(new Set(cache.milestones.map(m => m.id)));
   }
 
   async function setMilestonesImpl(items) {
