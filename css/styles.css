@@ -696,3 +696,40 @@ kbd { background: var(--border-soft); border: 1px solid var(--border); border-ra
   .workload-row { flex-wrap: wrap; }
   .workload-row__who { min-width: 100%; }
 }
+
+/* ============================================================
+   WORKFORCE PLANNING
+   ============================================================ */
+.wf-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+@media (max-width: 1000px) { .wf-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .wf-kpi-grid { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   PROJECT WORKSPACE
+   ============================================================ */
+.workspace-header { padding: 22px 24px; margin-bottom: 18px; }
+.workspace-header__back { margin-bottom: 10px; padding-left: 0; }
+.workspace-header__name { font-family: var(--font-display); font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+.workspace-header__meta { display: flex; gap: 32px; flex-wrap: wrap; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.workspace-header__meta-item { font-size: 11px; color: var(--ink-faint); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.workspace-header__meta-item strong { display: block; font-size: 14px; color: var(--ink); font-weight: 700; margin-top: 6px; text-transform: none; letter-spacing: 0; }
+.workspace-header__meta-item .progress-bar { width: 140px; margin-top: 6px; }
+
+.workspace-nav {
+  display: flex; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  border-bottom: 1px solid var(--border); margin-bottom: 20px;
+}
+.workspace-nav__item {
+  border: none; background: transparent; color: var(--ink-soft); cursor: pointer;
+  padding: 11px 16px; font-size: 13px; font-weight: 600; white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex; align-items: center; gap: 6px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.workspace-nav__item:hover { color: var(--ink); background: var(--border-soft); }
+.workspace-nav__item.is-active { color: var(--primary-dark); border-bottom-color: var(--primary); font-weight: 700; background: var(--primary-soft); }
+
+@media (max-width: 700px) {
+  .workspace-header { padding: 18px; }
+  .workspace-header__meta { gap: 18px; }
+  .workspace-nav__item { padding: 10px 12px; font-size: 12.5px; }
+}
