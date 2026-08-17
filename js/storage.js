@@ -22,14 +22,23 @@ const DataStore = (() => {
     members: 'projectly_members',
     settings: 'projectly_settings',
     notifications: 'projectly_notifications',
-    auditLog: 'projectly_audit_log'
+    auditLog: 'projectly_audit_log',
+    roles: 'projectly_roles',
+    skills: 'projectly_skills',
+    allocations: 'projectly_allocations',
+    leaveRecords: 'projectly_leave_records',
+    holidays: 'projectly_holidays',
+    ridac: 'projectly_ridac'
   };
 
   const MAX_AUDIT_ENTRIES = 1000;
 
   let mode = 'local'; // 'local' | 'firestore'
   let db = null;
-  let cache = { projects: [], tasks: [], portfolios: [], milestones: [], members: [], auditLog: [] };
+  let cache = {
+    projects: [], tasks: [], portfolios: [], milestones: [], members: [], auditLog: [],
+    roles: [], skills: [], allocations: [], leaveRecords: [], holidays: [], ridac: []
+  };
   const listeners = new Set();
 
   function notify(kind) {
@@ -95,15 +104,36 @@ const DataStore = (() => {
     return (items || []).map(t => (t.type === 'task' || t.type === 'milestone') ? t : { ...t, type: 'task' });
   }
 
+  // Backward-compat migration for members saved before the Workforce Planning
+  // module existed. Old records only have {id, name, role: 'manager'|'member',
+  // createdAt} — role is no longer used to gate the Owner/Assignee dropdowns
+  // (see Utils.managerOptionsHtml/memberOptionsHtml), but every People profile
+  // field the Workforce module expects gets a safe default here so nothing
+  // downstream has to null-check. Never mutates stored data in place.
+  const MEMBER_DEFAULTS = {
+    email: '', jobTitle: '', roleId: null, department: '', managerId: null,
+    location: '', status: 'Active', startDate: null, endDate: null,
+    hoursPerDay: 8, hoursPerWeek: 40, skills: []
+  };
+  function normalizeMembers(items) {
+    return (items || []).map(m => ({ ...MEMBER_DEFAULTS, ...m, skills: Array.isArray(m.skills) ? m.skills : [] }));
+  }
+
   async function loadAll() {
     if (mode === 'firestore') {
-      const [pSnap, tSnap, pfSnap, mSnap, memSnap, auditSnap] = await Promise.all([
+      const [pSnap, tSnap, pfSnap, mSnap, memSnap, auditSnap, roleSnap, skillSnap, allocSnap, leaveSnap, holSnap, ridacSnap] = await Promise.all([
         db.collection('projectly').doc('projects').get(),
         db.collection('projectly').doc('tasks').get(),
         db.collection('projectly').doc('portfolios').get(),
         db.collection('projectly').doc('milestones').get(),
         db.collection('projectly').doc('members').get(),
-        db.collection('projectly').doc('auditLog').get()
+        db.collection('projectly').doc('auditLog').get(),
+        db.collection('projectly').doc('roles').get(),
+        db.collection('projectly').doc('skills').get(),
+        db.collection('projectly').doc('allocations').get(),
+        db.collection('projectly').doc('leaveRecords').get(),
+        db.collection('projectly').doc('holidays').get(),
+        db.collection('projectly').doc('ridac').get()
       ]);
       cache.projects = (pSnap.exists && pSnap.data().items) || [];
       cache.tasks = (tSnap.exists && tSnap.data().items) || [];
@@ -111,6 +141,12 @@ const DataStore = (() => {
       cache.milestones = (mSnap.exists && mSnap.data().items) || [];
       cache.members = (memSnap.exists && memSnap.data().items) || [];
       cache.auditLog = (auditSnap.exists && auditSnap.data().items) || [];
+      cache.roles = (roleSnap.exists && roleSnap.data().items) || [];
+      cache.skills = (skillSnap.exists && skillSnap.data().items) || [];
+      cache.allocations = (allocSnap.exists && allocSnap.data().items) || [];
+      cache.leaveRecords = (leaveSnap.exists && leaveSnap.data().items) || [];
+      cache.holidays = (holSnap.exists && holSnap.data().items) || [];
+      cache.ridac = (ridacSnap.exists && ridacSnap.data().items) || [];
     } else {
       cache.projects = localGet(LOCAL_KEYS.projects, []);
       cache.tasks = localGet(LOCAL_KEYS.tasks, []);
@@ -118,8 +154,15 @@ const DataStore = (() => {
       cache.milestones = localGet(LOCAL_KEYS.milestones, []);
       cache.members = localGet(LOCAL_KEYS.members, []);
       cache.auditLog = localGet(LOCAL_KEYS.auditLog, []);
+      cache.roles = localGet(LOCAL_KEYS.roles, []);
+      cache.skills = localGet(LOCAL_KEYS.skills, []);
+      cache.allocations = localGet(LOCAL_KEYS.allocations, []);
+      cache.leaveRecords = localGet(LOCAL_KEYS.leaveRecords, []);
+      cache.holidays = localGet(LOCAL_KEYS.holidays, []);
+      cache.ridac = localGet(LOCAL_KEYS.ridac, []);
     }
     cache.tasks = normalizeTasks(cache.tasks);
+    cache.members = normalizeMembers(cache.members);
   }
 
   async function persist(kind) {
@@ -327,6 +370,12 @@ const DataStore = (() => {
     getMilestones() { return cache.milestones; },
     getMembers() { return cache.members; },
     getAuditLog() { return cache.auditLog; },
+    getRoles() { return cache.roles; },
+    getSkills() { return cache.skills; },
+    getAllocations() { return cache.allocations; },
+    getLeaveRecords() { return cache.leaveRecords; },
+    getHolidays() { return cache.holidays; },
+    getRidacs() { return cache.ridac; },
 
     async setProjects(items) {
       cache.projects = items;
@@ -346,9 +395,39 @@ const DataStore = (() => {
       await setMilestonesImpl(items);
     },
     async setMembers(items) {
-      cache.members = items;
+      cache.members = normalizeMembers(items);
       await persist('members');
       notify('members');
+    },
+    async setRoles(items) {
+      cache.roles = items;
+      await persist('roles');
+      notify('roles');
+    },
+    async setSkills(items) {
+      cache.skills = items;
+      await persist('skills');
+      notify('skills');
+    },
+    async setAllocations(items) {
+      cache.allocations = items;
+      await persist('allocations');
+      notify('allocations');
+    },
+    async setLeaveRecords(items) {
+      cache.leaveRecords = items;
+      await persist('leaveRecords');
+      notify('leaveRecords');
+    },
+    async setHolidays(items) {
+      cache.holidays = items;
+      await persist('holidays');
+      notify('holidays');
+    },
+    async setRidacs(items) {
+      cache.ridac = items;
+      await persist('ridac');
+      notify('ridac');
     },
 
     async appendAuditLog(entries) {

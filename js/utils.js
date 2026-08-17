@@ -116,19 +116,33 @@ const Utils = (() => {
   }
 
   // ---- shared team member option lists (used by Projects, Portfolios, Tasks) ----
-  function roleOptionsHtml(role, current) {
-    const list = DataStore.getMembers().filter(m => m.role === role);
+  // People no longer split into manager/member buckets — Workforce Planning >
+  // People is the single source of truth. Both Owner and Assignee dropdowns
+  // list every active person, alphabetically. Kept as two named functions
+  // (rather than collapsing call sites) so Owner/Assignee could diverge again
+  // later (e.g. filtering Owner to a specific job Role) without touching
+  // Projects/Portfolios/Tasks/Milestones/Import.
+  function peopleOptionsHtml(current) {
+    const list = DataStore.getMembers().filter(m => m.status !== 'Inactive').sort((a, b) => a.name.localeCompare(b.name));
     const names = list.map(m => m.name);
     const extra = (current && !names.includes(current))
-      ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (removed from Admin)</option>`
+      ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (not in People)</option>`
       : '';
     return `<option value="">Unassigned</option>${extra}${list.map(m =>
       `<option value="${escapeHtml(m.name)}" ${current === m.name ? 'selected' : ''}>${escapeHtml(m.name)}</option>`
     ).join('')}`;
   }
 
-  function managerOptionsHtml(current) { return roleOptionsHtml('manager', current); }
-  function memberOptionsHtml(current) { return roleOptionsHtml('member', current); }
+  function managerOptionsHtml(current) { return peopleOptionsHtml(current); }
+  function memberOptionsHtml(current) { return peopleOptionsHtml(current); }
+
+  // ---- shared Role / Skill option lists (Workforce Planning) ----
+  function workforceRoleOptionsHtml(current, placeholder = 'No role') {
+    const list = (typeof DataStore.getRoles === 'function' ? DataStore.getRoles() : []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    return `<option value="">${escapeHtml(placeholder)}</option>${list.map(r =>
+      `<option value="${r.id}" ${current === r.id ? 'selected' : ''}>${escapeHtml(r.name)}</option>`
+    ).join('')}`;
+  }
 
   // ---- shared color picker (used by Projects, Portfolios, etc.) ----
   function colorPickerHtml(selected) {
@@ -148,6 +162,7 @@ const Utils = (() => {
   return {
     PROJECT_COLORS, uid, fmtDate, daysBetween, todayISO, addDays, clamp,
     colorHex, initials, escapeHtml, toast, openModal, debounce,
-    colorPickerHtml, bindColorPicker, managerOptionsHtml, memberOptionsHtml
+    colorPickerHtml, bindColorPicker, managerOptionsHtml, memberOptionsHtml,
+    peopleOptionsHtml, workforceRoleOptionsHtml
   };
 })();

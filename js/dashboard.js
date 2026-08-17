@@ -565,5 +565,5 @@ const Dashboard = (() => {
   function getSelectedProjectId() { return selectedProjectId; }
   function setSelectedProjectId(id) { selectedProjectId = id || 'all'; }
 
-  return { render, getSelectedProjectId, setSelectedProjectId };
+  return { render, getSelectedProjectId, setSelectedProjectId, renderProjectView, budgetBarHtml };
 })();

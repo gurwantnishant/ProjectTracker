@@ -16,9 +16,21 @@
    ============================================================ */
 
 const AuditLog = (() => {
-  const KIND_TYPE = { projects: 'project', tasks: 'task', milestones: 'milestone', portfolios: 'portfolio', members: 'member' };
-  const TYPE_LABEL = { project: 'Project', task: 'Task', milestone: 'Milestone', portfolio: 'Portfolio', member: 'Member' };
-  const TYPE_ICON = { project: '📁', task: '☑', milestone: '🎯', portfolio: '🗂', member: '👤' };
+  const KIND_TYPE = {
+    projects: 'project', tasks: 'task', milestones: 'milestone', portfolios: 'portfolio', members: 'member',
+    roles: 'role', skills: 'skill', allocations: 'allocation', leaveRecords: 'leave', holidays: 'holiday',
+    ridac: 'ridac'
+  };
+  const TYPE_LABEL = {
+    project: 'Project', task: 'Task', milestone: 'Milestone', portfolio: 'Portfolio', member: 'Person',
+    role: 'Role', skill: 'Skill', allocation: 'Allocation', leave: 'Leave', holiday: 'Holiday',
+    ridac: 'RIDAC'
+  };
+  const TYPE_ICON = {
+    project: '📁', task: '☑', milestone: '🎯', portfolio: '🗂', member: '👤',
+    role: '🧭', skill: '🧩', allocation: '📌', leave: '🌴', holiday: '🏖',
+    ridac: '🛡'
+  };
 
   const FIELD_LABELS = {
     name: 'Name', description: 'Description', owner: 'Owner', department: 'Department',
@@ -29,7 +41,15 @@ const AuditLog = (() => {
     dependencies: 'Dependencies',
     assignedTo: 'Assigned to', milestoneId: 'Milestone', projectId: 'Project',
     estimatedHours: 'Estimated hours', actualHours: 'Actual hours', progress: 'Progress %',
-    role: 'Role', datesAuto: 'Auto-distribute dates'
+    datesAuto: 'Auto-distribute dates',
+    email: 'Email', jobTitle: 'Job title', roleId: 'Role', managerId: 'Manager',
+    location: 'Location', endDate: 'End date', hoursPerDay: 'Hours/day', hoursPerWeek: 'Hours/week',
+    memberId: 'Person', allocationPercent: 'Allocation %', plannedHours: 'Planned hours', notes: 'Notes',
+    type: 'Type', hours: 'Hours', date: 'Date',
+    title: 'Title', number: 'Number', state: 'State', impact: 'Impact', probability: 'Probability',
+    riskStatus: 'Risk status', decisionStatus: 'Decision status', mitigationPlan: 'Mitigation plan',
+    contingencyPlan: 'Contingency plan', rootCause: 'Root cause', resolutionPlan: 'Resolution plan',
+    recommendation: 'Recommendation', finalDecision: 'Final decision', closedAt: 'Closed at'
   };
 
   // Fields that are auto-derived or internal — never worth an audit line on their own.
@@ -38,7 +58,13 @@ const AuditLog = (() => {
     task: ['id', 'createdAt', 'comments', 'subtasks'],
     milestone: ['id', 'createdAt'],
     portfolio: ['id', 'createdAt'],
-    member: ['id', 'createdAt']
+    member: ['id', 'createdAt', 'skills'],
+    role: ['id', 'createdAt'],
+    skill: ['id', 'createdAt'],
+    allocation: ['id', 'createdAt'],
+    leave: ['id', 'createdAt'],
+    holiday: ['id', 'createdAt'],
+    ridac: ['id', 'createdAt', 'comments', 'number']
   };
 
   let snapshot = {};
@@ -52,7 +78,10 @@ const AuditLog = (() => {
     if (field === 'datesAuto') return value ? 'On' : 'Off';
     if (field === 'portfolioId') { const p = DataStore.getPortfolios().find(x => x.id === value); return p ? p.name : value; }
     if (field === 'milestoneId') { const m = DataStore.getMilestones().find(x => x.id === value); return m ? m.name : value; }
-    if (field === 'startDate' || field === 'dueDate' || field === 'plannedDate' || field === 'actualDate') return Utils.fmtDate(value);
+    if (field === 'projectId') { const p = DataStore.getProjects().find(x => x.id === value); return p ? p.name : value; }
+    if (field === 'roleId') { const r = DataStore.getRoles().find(x => x.id === value); return r ? r.name : value; }
+    if (field === 'managerId' || field === 'memberId') { const m = DataStore.getMembers().find(x => x.id === value); return m ? m.name : value; }
+    if (field === 'startDate' || field === 'dueDate' || field === 'plannedDate' || field === 'actualDate' || field === 'endDate' || field === 'date') return Utils.fmtDate(value);
     if (field === 'dependencies') {
       if (!value.length) return '—';
       const tasks = DataStore.getTasks();
@@ -101,8 +130,18 @@ const AuditLog = (() => {
 
   function contextProjectId(type, item) {
     if (type === 'project') return item.id;
-    if (type === 'task' || type === 'milestone') return item.projectId || null;
+    if (type === 'task' || type === 'milestone' || type === 'allocation' || type === 'ridac') return item.projectId || null;
     return null;
+  }
+
+  function entityNameFor(type, item) {
+    if (type === 'ridac') return `${item.number || ''} ${item.title || ''}`.trim() || '(unnamed)';
+    if (item.name) return item.name;
+    if (type === 'allocation' || type === 'leave') {
+      const m = DataStore.getMembers().find(x => x.id === item.memberId);
+      return m ? m.name : '(unnamed)';
+    }
+    return '(unnamed)';
   }
 
   function makeEntry(type, item, action, changes) {
@@ -110,7 +149,7 @@ const AuditLog = (() => {
       id: Utils.uid('audit'),
       entityType: type,
       entityId: item.id,
-      entityName: item.name || '(unnamed)',
+      entityName: entityNameFor(type, item),
       contextProjectId: contextProjectId(type, item),
       action,
       changes,
@@ -138,14 +177,22 @@ const AuditLog = (() => {
     tasks: () => DataStore.getTasks(),
     milestones: () => DataStore.getMilestones(),
     portfolios: () => DataStore.getPortfolios(),
-    members: () => DataStore.getMembers()
+    members: () => DataStore.getMembers(),
+    roles: () => DataStore.getRoles(),
+    skills: () => DataStore.getSkills(),
+    allocations: () => DataStore.getAllocations(),
+    leaveRecords: () => DataStore.getLeaveRecords(),
+    holidays: () => DataStore.getHolidays(),
+    ridac: () => DataStore.getRidacs()
   };
 
   async function handleChange(kind) {
     if (kind === 'init') {
       snapshot = {
         projects: DataStore.getProjects(), tasks: DataStore.getTasks(), milestones: DataStore.getMilestones(),
-        portfolios: DataStore.getPortfolios(), members: DataStore.getMembers()
+        portfolios: DataStore.getPortfolios(), members: DataStore.getMembers(),
+        roles: DataStore.getRoles(), skills: DataStore.getSkills(), allocations: DataStore.getAllocations(),
+        leaveRecords: DataStore.getLeaveRecords(), holidays: DataStore.getHolidays(), ridac: DataStore.getRidacs()
       };
       ready = true;
       return;

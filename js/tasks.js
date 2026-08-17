@@ -20,6 +20,13 @@ const Tasks = (() => {
     App.navigate('tasks');
   }
 
+  // Scopes the Tasks view to one project without navigating away — used by
+  // the Project Workspace's "Planning" section so Tasks can be embedded
+  // in-place instead of only reachable as a full-page redirect.
+  function setProjectFilter(projectId) {
+    filters.project = projectId || '';
+  }
+
   function applyFilters(tasks) {
     return tasks.filter(t => {
       if (filters.status && t.status !== filters.status) return false;
@@ -650,6 +657,7 @@ const Tasks = (() => {
           const task = { id: newId, ...data, comments: [], createdAt: Date.now() };
           DataStore.setTasks([...DataStore.getTasks(), task]);
           Utils.toast(`Created "${task.name}"`);
+          if (typeof Workforce !== 'undefined' && data.assignedTo) Workforce.warnIfOverallocatedByName(data.assignedTo);
           close();
         });
       }
@@ -683,6 +691,7 @@ const Tasks = (() => {
           const tasks = DataStore.getTasks().map(t => t.id === task.id ? { ...task, ...data } : t);
           DataStore.setTasks(tasks);
           Utils.toast('Task updated');
+          if (typeof Workforce !== 'undefined' && data.assignedTo) Workforce.warnIfOverallocatedByName(data.assignedTo);
           close();
         });
       }
@@ -759,5 +768,5 @@ const Tasks = (() => {
     });
   }
 
-  return { render, openCreateModal, openEditModal, openDetailModal, filterByProject };
+  return { render, openCreateModal, openEditModal, openDetailModal, filterByProject, setProjectFilter };
 })();

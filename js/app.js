@@ -9,8 +9,8 @@ const App = (() => {
     { key: 'projects', label: 'Projects', icon: '📁' },
     { key: 'tasks', label: 'Tasks', icon: '📋' },
     { key: 'gantt', label: 'Timeline', icon: '📅' },
+    { key: 'workforce', label: 'Workforce', icon: '👥' },
     { key: 'activity', label: 'Activity', icon: '🕓' },
-    { key: 'admin', label: 'Admin', icon: '🛡' },
     { key: 'settings', label: 'Settings', icon: '⚙' }
   ];
 
@@ -26,7 +26,20 @@ const App = (() => {
   function navigate(view, opts = {}) {
     state.view = view;
     if (opts.focusId) state.focusId = opts.focusId; else state.focusId = null;
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('is-active', n.dataset.view === view));
+    state.workforceProjectId = opts.projectId || null;
+    if (view === 'workspace') {
+      state.workspaceProjectId = opts.projectId || state.workspaceProjectId;
+      state.workspaceSection = opts.section || state.workspaceSection || 'details';
+      if (state.workspaceProjectId) {
+        const hash = `#project/${state.workspaceProjectId}/${state.workspaceSection}`;
+        if (location.hash !== hash) history.pushState(null, '', hash);
+      }
+    } else if (location.hash) {
+      history.pushState(null, '', location.pathname + location.search);
+    }
+    // Projects stays visually highlighted while browsing a project's workspace.
+    const highlightView = view === 'workspace' ? 'projects' : view;
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('is-active', n.dataset.view === highlightView));
     renderMain();
     if (window.innerWidth <= 860) document.querySelector('.app-shell').classList.remove('mobile-nav-open');
   }
@@ -52,9 +65,10 @@ const App = (() => {
       case 'projects': Projects.render(main, { focusId: state.focusId }); break;
       case 'tasks': Tasks.render(main, { focusId: state.focusId }); break;
       case 'gantt': Gantt.render(main); break;
+      case 'workforce': Workforce.render(main, { projectId: state.workforceProjectId }); break;
       case 'activity': AuditLog.render(main); break;
-      case 'admin': Admin.render(main); break;
       case 'settings': renderSettings(main); break;
+      case 'workspace': Workspace.render(main, { projectId: state.workspaceProjectId, section: state.workspaceSection }); break;
     }
     refreshTopbarProjectSelect();
   }
@@ -113,12 +127,12 @@ const App = (() => {
         </div>
         <div class="card panel">
           <div class="panel__title">Demo data</div>
-          <div class="text-soft" style="font-size:12px; margin-bottom: 10px;">Loads sample projects, tasks, portfolios and milestones so you can explore the app. Only runs when you click it.</div>
+          <div class="text-soft" style="font-size:12px; margin-bottom: 10px;">Loads sample projects, tasks, portfolios, milestones and a starter RIDAC register so you can explore the app. Only runs when you click it.</div>
           <button class="btn-secondary" id="loadDemoDataBtn">Load demo data</button>
         </div>
         <div class="card panel">
           <div class="panel__title">Clear all data</div>
-          <div class="text-soft" style="font-size:12px; margin-bottom: 10px;">Permanently deletes all projects, tasks, portfolios and milestones from your database. This does not add anything back.</div>
+          <div class="text-soft" style="font-size:12px; margin-bottom: 10px;">Permanently deletes all projects, tasks, portfolios, milestones and RIDAC items from your database. This does not add anything back.</div>
           <button class="btn-danger" id="clearDataBtn">Clear all data</button>
         </div>
       </div>
@@ -127,12 +141,13 @@ const App = (() => {
     document.getElementById('exportBtn').addEventListener('click', exportCSV);
     document.getElementById('importFile').addEventListener('change', importCSV);
     document.getElementById('loadDemoDataBtn').addEventListener('click', () => {
-      if (!confirm('This will ADD sample projects, tasks, portfolios and milestones alongside any data you already have. Continue?')) return;
-      const { projects, tasks, portfolios, milestones } = SampleData.generate();
+      if (!confirm('This will ADD sample projects, tasks, portfolios, milestones and a starter RIDAC register alongside any data you already have. Continue?')) return;
+      const { projects, tasks, portfolios, milestones, ridac } = SampleData.generate();
       DataStore.setProjects([...DataStore.getProjects(), ...projects]);
       DataStore.setTasks([...DataStore.getTasks(), ...tasks]);
       DataStore.setPortfolios([...DataStore.getPortfolios(), ...portfolios]);
       DataStore.setMilestones([...DataStore.getMilestones(), ...milestones]);
+      if (ridac && ridac.length) DataStore.setRidacs([...DataStore.getRidacs(), ...ridac]);
       Utils.toast('Demo data loaded');
     });
     document.getElementById('clearDataBtn').addEventListener('click', () => {
@@ -141,6 +156,7 @@ const App = (() => {
       DataStore.setTasks([]);
       DataStore.setPortfolios([]);
       DataStore.setMilestones([]);
+      DataStore.setRidacs([]);
       Utils.toast('All data cleared');
     });
   }
@@ -194,13 +210,17 @@ const App = (() => {
       const removed = projects[idx];
       const remainingTasks = DataStore.getTasks();
       const removedTasks = remainingTasks.filter(t => t.projectId === id);
+      const remainingRidacs = DataStore.getRidacs();
+      const removedRidacs = remainingRidacs.filter(r => r.projectId === id);
       DataStore.setProjects(projects.filter(p => p.id !== id));
       DataStore.setTasks(remainingTasks.filter(t => t.projectId !== id));
+      if (removedRidacs.length) DataStore.setRidacs(remainingRidacs.filter(r => r.projectId !== id));
       Utils.toast(`Deleted "${label}"`, {
         actionLabel: 'Undo', tone: 'default',
         onAction: () => {
           DataStore.setProjects([...DataStore.getProjects(), removed]);
           DataStore.setTasks([...DataStore.getTasks(), ...removedTasks]);
+          if (removedRidacs.length) DataStore.setRidacs([...DataStore.getRidacs(), ...removedRidacs]);
         }
       });
     } else if (kind === 'task') {
@@ -239,25 +259,30 @@ const App = (() => {
           DataStore.setProjects(DataStore.getProjects().map(p => (affectedIds.includes(p.id) ? { ...p, portfolioId: id } : p)));
         }
       });
+    } else if (kind === 'ridac') {
+      const ridacs = DataStore.getRidacs();
+      const idx = ridacs.findIndex(r => r.id === id);
+      if (idx === -1) return;
+      const removed = ridacs[idx];
+      DataStore.setRidacs(ridacs.filter(r => r.id !== id));
+      Utils.toast(`Deleted "${label}"`, {
+        actionLabel: 'Undo',
+        onAction: () => DataStore.setRidacs([...DataStore.getRidacs(), removed])
+      });
     }
   }
 
-  // ---------------- one-time migration: seed Admin members from existing data ----------------
+  // ---------------- one-time migration: seed People from existing data ----------------
   async function seedMembersFromExistingData() {
-    const managerNames = new Set(
+    const ownerNames = new Set(
       [...DataStore.getProjects().map(p => p.owner), ...DataStore.getPortfolios().map(p => p.owner), ...DataStore.getMilestones().map(m => m.owner)]
         .map(n => (n || '').trim()).filter(Boolean)
     );
-    const memberNames = new Set(
+    const assigneeNames = new Set(
       DataStore.getTasks().map(t => (t.assignedTo || '').trim()).filter(Boolean)
     );
-    const members = [];
-    managerNames.forEach(name => members.push({ id: Utils.uid('mem'), name, role: 'manager', createdAt: Date.now() }));
-    memberNames.forEach(name => {
-      if (!members.some(m => m.role === 'member' && m.name.toLowerCase() === name.toLowerCase())) {
-        members.push({ id: Utils.uid('mem'), name, role: 'member', createdAt: Date.now() });
-      }
-    });
+    const allNames = new Set([...ownerNames].concat([...assigneeNames]));
+    const members = [...allNames].map(name => ({ id: Utils.uid('mem'), name, status: 'Active', createdAt: Date.now() }));
     if (members.length) await DataStore.setMembers(members);
   }
 
@@ -386,6 +411,29 @@ const App = (() => {
     });
   }
 
+  // Lightweight hash routing for the Project Workspace, e.g. #project/<id>/ridac.
+  // No router dependency — just a manual parse/listen pair.
+  function parseWorkspaceHash() {
+    const m = location.hash.match(/^#project\/([^/]+)\/([^/]+)$/);
+    return m ? { projectId: m[1], section: m[2] } : null;
+  }
+
+  function bindHashRouting() {
+    window.addEventListener('hashchange', () => {
+      const route = parseWorkspaceHash();
+      if (route && DataStore.getProjects().some(p => p.id === route.projectId)) {
+        navigate('workspace', route);
+      } else if (!route && state.view === 'workspace') {
+        navigate('projects');
+      }
+    });
+    window.addEventListener('popstate', () => {
+      const route = parseWorkspaceHash();
+      if (route && DataStore.getProjects().some(p => p.id === route.projectId)) navigate('workspace', route);
+      else if (!route && state.view === 'workspace') navigate('projects');
+    });
+  }
+
   async function init() {
     await DataStore.ready;
     // NOTE: sample/demo data is no longer auto-seeded here. An empty
@@ -400,10 +448,13 @@ const App = (() => {
     buildSidebar();
     bindTopbar();
     bindKeyboardShortcuts();
+    bindHashRouting();
     Notifications.init();
-    navigate('dashboard');
+    const initialRoute = parseWorkspaceHash();
+    if (initialRoute && DataStore.getProjects().some(p => p.id === initialRoute.projectId)) navigate('workspace', initialRoute);
+    else navigate('dashboard');
     DataStore.onChange((kind) => {
-      if (['projects', 'tasks', 'portfolios', 'milestones', 'members'].includes(kind)) {
+      if (['projects', 'tasks', 'portfolios', 'milestones', 'members', 'roles', 'skills', 'allocations', 'leaveRecords', 'holidays', 'ridac'].includes(kind)) {
         Notifications.recompute();
         renderMain();
       }

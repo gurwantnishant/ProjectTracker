@@ -305,72 +305,81 @@ const Projects = (() => {
     });
   }
 
+  // Selecting a project now opens the Project Workspace (see workspace.js)
+  // instead of this modal. Kept as a thin redirect so every existing call
+  // site (Dashboard hero, global search, notifications, etc.) keeps working
+  // without having to be touched individually.
   function openDetailModal(id) {
-    const project = DataStore.getProjects().find(p => p.id === id);
-    if (!project) return;
-    const tasks = DataStore.getTasks().filter(t => t.projectId === id);
-    const flag = flagFor(project);
-    Utils.openModal({
-      title: project.name,
-      wide: true,
-      bodyHtml: `
-        <div class="tab-bar">
-          <button class="tab-btn is-active" data-tab="overview">Overview</button>
-          <button class="tab-btn" data-tab="charter">Charter${hasCharterContent(getCharterData(project)) ? ' 📜' : ''}</button>
-        </div>
-        <div data-tab-panel="overview">
-          <div class="flex gap-8" style="margin-bottom: 14px; flex-wrap:wrap;">
-            <span class="badge ${statusClass(project.status)}">${project.status}</span>
-            <span class="badge ${priClass(project.priority)}">${project.priority}</span>
-            ${flag ? `<span class="project-card__flag ${flag.cls}">${flag.label}</span>` : ''}
-            ${(project.tags || []).map(t => `<span class="tag">${Utils.escapeHtml(t)}</span>`).join('')}
-          </div>
-          <p class="text-soft">${Utils.escapeHtml(project.description || 'No description yet.')}</p>
-          <div class="form-grid" style="margin: 16px 0;">
-            <div><div class="text-faint" style="font-size:11px;">OWNER</div><div>${Utils.escapeHtml(project.owner)}</div></div>
-            <div><div class="text-faint" style="font-size:11px;">DEPARTMENT</div><div>${Utils.escapeHtml(project.department || '—')}</div></div>
-            <div><div class="text-faint" style="font-size:11px;">START DATE</div><div>${Utils.fmtDate(project.startDate)}</div></div>
-            <div><div class="text-faint" style="font-size:11px;">DUE DATE</div><div>${Utils.fmtDate(project.dueDate)}</div></div>
-            <div><div class="text-faint" style="font-size:11px;">PORTFOLIO</div><div>${project.portfolioId ? portfolioTag(project.portfolioId) : '<span class="text-faint">—</span>'}</div></div>
-            ${project.budget ? `<div><div class="text-faint" style="font-size:11px;">BUDGET</div><div>$${Number(project.actualCost || 0).toLocaleString()} / $${Number(project.budget).toLocaleString()}</div></div>` : ''}
-          </div>
-          <div class="progress-bar" style="--card-color:${Utils.colorHex(project.color)}"><div class="progress-bar__fill" style="width:${project.progress}%"></div></div>
-          <div class="panel__title" style="margin-top:20px;">Tasks (${tasks.length})</div>
-          ${tasks.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>Task</th><th>Milestone</th><th>Assignee</th><th>Status</th><th>Due</th></tr></thead>
-            <tbody>${tasks.slice(0, 8).map(t => {
-              const ms = t.milestoneId ? DataStore.getMilestones().find(m => m.id === t.milestoneId) : null;
-              return `<tr><td>${Utils.escapeHtml(t.name)}</td><td>${ms ? Utils.escapeHtml(ms.name) : '<span class="text-faint">—</span>'}</td><td>${Utils.escapeHtml(t.assignedTo)}</td><td><span class="badge ${statusClass(t.status)}">${t.status}</span></td><td>${Utils.fmtDate(t.dueDate)}</td></tr>`;
-            }).join('')}</tbody>
-          </table></div>` : `<div class="text-faint">No tasks yet for this project.</div>`}
-          <div id="milestonesSection"></div>
-        </div>
-        <div data-tab-panel="charter" style="display:none;">
-          <div id="charterHost"></div>
-        </div>
-      `,
-      footerHtml: `
-        <button class="btn-secondary" id="viewTasksBtn">View All Tasks</button>
-        <button class="btn-secondary" id="editProjBtn">✏ Edit</button>
-        <button class="btn-danger" id="delProjBtn">Delete</button>
-      `,
-      onMount: (root, close) => {
-        root.querySelector('#editProjBtn').addEventListener('click', () => { close(); openEditModal(project); });
-        root.querySelector('#delProjBtn').addEventListener('click', () => { close(); App.deleteWithUndo({ label: project.name, kind: 'project', id: project.id }); });
-        root.querySelector('#viewTasksBtn').addEventListener('click', () => { close(); Tasks.filterByProject(project.id); });
-        if (typeof Milestones !== 'undefined') Milestones.renderForProject(root.querySelector('#milestonesSection'), project.id);
+    if (typeof Workspace !== 'undefined') { Workspace.open(id, 'details'); return; }
+    // Fallback (Workspace not loaded for some reason): jump to the project list.
+    App.navigate('projects', { focusId: id });
+  }
 
-        root.querySelectorAll('.tab-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            root.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('is-active'));
-            btn.classList.add('is-active');
-            root.querySelectorAll('[data-tab-panel]').forEach(p => {
-              p.style.display = p.dataset.tabPanel === btn.dataset.tab ? '' : 'none';
-            });
-          });
-        });
-        renderCharterTab(root.querySelector('#charterHost'), project);
-      }
+  // ---------------- Details panel content (Overview + Charter tabs) ----------------
+  // Reused by the Project Workspace's "Details" section. This is exactly
+  // what used to live inside the old detail modal's body — extracted so it
+  // can be rendered straight into a workspace panel instead of a modal.
+  function renderDetailsPanel(host, project) {
+    const tasks = DataStore.getTasks().filter(t => t.projectId === project.id);
+    const flag = flagFor(project);
+    host.innerHTML = `
+      <div class="flex gap-8" style="justify-content:flex-end; margin-bottom:14px;">
+        <button class="btn-secondary btn-sm" id="wsViewTasksBtn">View All Tasks</button>
+        <button class="btn-secondary btn-sm" id="wsEditProjBtn">✏ Edit</button>
+        <button class="btn-danger btn-sm" id="wsDelProjBtn">Delete</button>
+      </div>
+      <div class="tab-bar">
+        <button class="tab-btn is-active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="charter">Charter${hasCharterContent(getCharterData(project)) ? ' 📜' : ''}</button>
+      </div>
+      <div data-tab-panel="overview">
+        <div class="flex gap-8" style="margin-bottom: 14px; flex-wrap:wrap;">
+          <span class="badge ${statusClass(project.status)}">${project.status}</span>
+          <span class="badge ${priClass(project.priority)}">${project.priority}</span>
+          ${flag ? `<span class="project-card__flag ${flag.cls}">${flag.label}</span>` : ''}
+          ${(project.tags || []).map(t => `<span class="tag">${Utils.escapeHtml(t)}</span>`).join('')}
+        </div>
+        <p class="text-soft">${Utils.escapeHtml(project.description || 'No description yet.')}</p>
+        <div class="form-grid" style="margin: 16px 0;">
+          <div><div class="text-faint" style="font-size:11px;">OWNER</div><div>${Utils.escapeHtml(project.owner)}</div></div>
+          <div><div class="text-faint" style="font-size:11px;">DEPARTMENT</div><div>${Utils.escapeHtml(project.department || '—')}</div></div>
+          <div><div class="text-faint" style="font-size:11px;">START DATE</div><div>${Utils.fmtDate(project.startDate)}</div></div>
+          <div><div class="text-faint" style="font-size:11px;">DUE DATE</div><div>${Utils.fmtDate(project.dueDate)}</div></div>
+          <div><div class="text-faint" style="font-size:11px;">PORTFOLIO</div><div>${project.portfolioId ? portfolioTag(project.portfolioId) : '<span class="text-faint">—</span>'}</div></div>
+          ${project.budget ? `<div><div class="text-faint" style="font-size:11px;">BUDGET</div><div>$${Number(project.actualCost || 0).toLocaleString()} / $${Number(project.budget).toLocaleString()}</div></div>` : ''}
+        </div>
+        <div class="progress-bar" style="--card-color:${Utils.colorHex(project.color)}"><div class="progress-bar__fill" style="width:${project.progress}%"></div></div>
+        <div class="panel__title" style="margin-top:20px;">Tasks (${tasks.length})</div>
+        ${tasks.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>Task</th><th>Milestone</th><th>Assignee</th><th>Status</th><th>Due</th></tr></thead>
+          <tbody>${tasks.slice(0, 8).map(t => {
+            const ms = t.milestoneId ? DataStore.getMilestones().find(m => m.id === t.milestoneId) : null;
+            return `<tr><td>${Utils.escapeHtml(t.name)}</td><td>${ms ? Utils.escapeHtml(ms.name) : '<span class="text-faint">—</span>'}</td><td>${Utils.escapeHtml(t.assignedTo)}</td><td><span class="badge ${statusClass(t.status)}">${t.status}</span></td><td>${Utils.fmtDate(t.dueDate)}</td></tr>`;
+          }).join('')}</tbody>
+        </table></div>` : `<div class="text-faint">No tasks yet for this project.</div>`}
+        <div id="wsMilestonesSection"></div>
+      </div>
+      <div data-tab-panel="charter" style="display:none;">
+        <div id="wsCharterHost"></div>
+      </div>
+    `;
+    host.querySelector('#wsEditProjBtn').addEventListener('click', () => openEditModal(project));
+    host.querySelector('#wsDelProjBtn').addEventListener('click', () => {
+      App.deleteWithUndo({ label: project.name, kind: 'project', id: project.id });
+      App.navigate('projects');
     });
+    host.querySelector('#wsViewTasksBtn').addEventListener('click', () => Tasks.filterByProject(project.id));
+    if (typeof Milestones !== 'undefined') Milestones.renderForProject(host.querySelector('#wsMilestonesSection'), project.id);
+
+    host.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        host.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+        host.querySelectorAll('[data-tab-panel]').forEach(p => {
+          p.style.display = p.dataset.tabPanel === btn.dataset.tab ? '' : 'none';
+        });
+      });
+    });
+    renderCharterTab(host.querySelector('#wsCharterHost'), project);
   }
 
   // ---------------- charter tab (structured template) ----------------
@@ -625,5 +634,5 @@ const Projects = (() => {
     });
   }
 
-  return { render, openCreateModal, openEditModal, openDetailModal };
+  return { render, openCreateModal, openEditModal, openDetailModal, renderDetailsPanel };
 })();

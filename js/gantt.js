@@ -6,6 +6,12 @@ const Gantt = (() => {
   let granularity = 'weekly'; // 'weekly' | 'monthly'
   let projectFilter = '';
 
+  // Scopes the Gantt view to one project — used by the Project Workspace's
+  // "Planning" section.
+  function setProjectFilter(projectId) {
+    projectFilter = projectId || '';
+  }
+
   function statusColor(t, projColor) {
     if (t.status === 'Completed') return 'var(--teal)';
     if (t.status === 'Blocked') return 'var(--coral)';
@@ -235,5 +241,5 @@ const Gantt = (() => {
     });
   }
 
-  return { render };
+  return { render, setProjectFilter };
 })();

@@ -190,7 +190,37 @@ const SampleData = (() => {
       });
     });
 
-    return { projects, tasks, portfolios, milestones };
+    // A small starter RIDAC register on the first two projects so the new
+    // module isn't empty on first look.
+    const ridac = [];
+    if (typeof Ridac !== 'undefined' && projects.length) {
+      const seedDefs = [
+        { type: 'Risk', title: 'Key vendor delivery slip', priority: 'High', impact: 'High', probability: 'Medium', riskStatus: 'Mitigating', mitigationPlan: 'Weekly vendor check-ins and buffer added to the schedule.', contingencyPlan: 'Identify a backup vendor for critical components.' },
+        { type: 'Issue', title: 'Test environment instability', priority: 'Medium', impact: 'Medium', rootCause: 'Shared staging environment conflicts across teams.', resolutionPlan: 'Provision a dedicated staging environment for this project.' },
+        { type: 'Decision', title: 'Choose reporting platform', priority: 'Medium', decisionStatus: 'Under Review', options: '- Power BI\n- Looker\n- Custom dashboard', recommendation: 'Power BI, given existing licensing and team familiarity.' },
+        { type: 'Action', title: 'Finalize data mapping doc', priority: 'Medium', completion: 40 },
+        { type: 'Concern', title: 'Stakeholder availability during rollout', priority: 'Low' }
+      ];
+      projects.slice(0, 2).forEach((p, pi) => {
+        seedDefs.forEach((def, i) => {
+          const type = def.type;
+          const prefix = { Risk: 'R', Issue: 'I', Decision: 'D', Action: 'A', Concern: 'C' }[type];
+          ridac.push({
+            id: Utils.uid('ridac'), projectId: p.id, type,
+            number: `${prefix}-${String(pi * seedDefs.length + i + 1).padStart(3, '0')}`,
+            title: def.title, description: '', state: (type === 'Decision' ? 'Under Review' : type === 'Action' ? 'In Progress' : 'Open'),
+            priority: def.priority || 'Medium', dueDate: Utils.addDays(today, 7 + i * 5), impact: def.impact || null,
+            probability: def.probability || null, assignedTo: pick(OWNERS), riskStatus: def.riskStatus || null,
+            decisionStatus: def.decisionStatus || null, mitigationPlan: def.mitigationPlan || '', contingencyPlan: def.contingencyPlan || '',
+            rootCause: def.rootCause || '', resolutionPlan: def.resolutionPlan || '', options: def.options || '',
+            recommendation: def.recommendation || '', finalDecision: '', completion: def.completion || 0,
+            comments: [], createdBy: pick(OWNERS), createdAt: Date.now(), updatedAt: Date.now(), closedAt: null
+          });
+        });
+      });
+    }
+
+    return { projects, tasks, portfolios, milestones, ridac };
   }
 
   return { generate };
